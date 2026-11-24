@@ -17,3 +17,7 @@ apps/mobile/signing/
 # release artifacts
 releases/
 apps/desktop/dist/
+
+# keep the local native module source (the generic android/ rule above would hide it)
+!apps/mobile/modules/*/android/
+apps/mobile/modules/*/android/build/
