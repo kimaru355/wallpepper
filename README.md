@@ -82,8 +82,8 @@ cd apps/desktop; npx electron-vite build; npx electron-builder --win   # Windows
 # 2. put the files in releases/<version>/ named: Wallpepper-<v>.apk, Wallpepper-Setup-<v>.exe, Wallpepper-<v>-linux-x86_64.AppImage, Wallpepper-<v>-linux-amd64.deb
 # 3. publish (uploads to the VPS, verifies SHA-256, then switches latest.json)
 bash site/scripts/publish.sh <version>
-# site page changes only:
-bash site/scripts/deploy.sh
+# site page changes: just push to main (the VPS dashboard project "wallpepper-site" rebuilds from site/)
+# /downloads/ server (rarely changes): bash site/scripts/deploy-downloads.sh
 ```
 
 Bump `version` in `apps/desktop/package.json` and `apps/mobile/app.json` (and `versionCode` for Android updates) before building. Old versions stay on the server under `/downloads/<version>/`. There is no macOS build yet (it needs a Mac).
