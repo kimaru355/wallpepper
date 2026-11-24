@@ -3,6 +3,7 @@ import { getDeviceSettings, rotateNow } from '@wallpepper/core';
 import { DeviceSettingsForm } from '../components';
 import { getCtx, toast, useAppState } from '../ctx';
 import { platform } from '../platform';
+import { UpdateCard } from '../UpdateCard';
 import { Btn, Card, text } from '../ui';
 
 export function SettingsScreen() {
@@ -34,6 +35,7 @@ export function SettingsScreen() {
           Android runs the playlist in the background about every 15+ minutes (battery permitting). Some phone makers stop background work for apps that were swiped away; if the wallpaper stops changing, exclude Wallpepper from battery optimisation.
         </Text>
       </Card>
+      <UpdateCard />
     </ScrollView>
   );
 }

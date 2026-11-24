@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import { hostname } from 'node:os';
 import { extname, join } from 'node:path';
 import { setWallpaperFile, type Target } from './wallpaper.ts';
+import * as updater from './updater.ts';
 
 const UA = 'Wallpepper/0.1 (+desktop)';
 let win: BrowserWindow | null = null;
@@ -110,6 +111,8 @@ function registerIpc() {
     prefs.closeToTray = !!on;
     await savePrefs();
   });
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:install', () => updater.install(win, () => { quitting = true; }));
   ipcMain.handle('shell:showItem', (_e, path: string) => shell.showItemInFolder(path));
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     assertHttp(url);
@@ -202,6 +205,12 @@ if (!gotLock) {
     registerIpc();
     createTray();
     createWindow(process.argv.includes('--hidden'));
+    // Look for a new release shortly after start and then every 6 hours (packaged builds only).
+    if (app.isPackaged) {
+      const poll = () => updater.check().then((u) => { if (u) win?.webContents.send('update:available', u); }).catch(() => {});
+      setTimeout(poll, 15_000);
+      setInterval(poll, 6 * 3600_000);
+    }
     app.on('activate', () => { if (!win) createWindow(false); else win.show(); });
   });
   app.on('before-quit', () => { quitting = true; });

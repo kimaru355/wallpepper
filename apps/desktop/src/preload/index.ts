@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+export interface UpdateStatus { version: string; current: string; how: 'install' | 'open'; size: number }
+
 const api = {
   loadState: (): Promise<string | null> => ipcRenderer.invoke('state:load'),
   saveState: (json: string): Promise<void> => ipcRenderer.invoke('state:save', json),
@@ -17,6 +19,18 @@ const api = {
   setCloseToTray: (on: boolean): Promise<void> => ipcRenderer.invoke('app:closeToTray', on),
   showItem: (path: string): Promise<void> => ipcRenderer.invoke('shell:showItem', path),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
+  checkUpdate: (): Promise<UpdateStatus | null> => ipcRenderer.invoke('update:check'),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
+  onUpdateAvailable: (fn: (u: UpdateStatus) => void): (() => void) => {
+    const h = (_e: unknown, u: UpdateStatus) => fn(u);
+    ipcRenderer.on('update:available', h);
+    return () => ipcRenderer.removeListener('update:available', h);
+  },
+  onUpdateProgress: (fn: (p: { done: number; total: number }) => void): (() => void) => {
+    const h = (_e: unknown, p: { done: number; total: number }) => fn(p);
+    ipcRenderer.on('update:progress', h);
+    return () => ipcRenderer.removeListener('update:progress', h);
+  },
   onTrayNext: (fn: () => void): (() => void) => {
     const h = () => fn();
     ipcRenderer.on('tray:next', h);

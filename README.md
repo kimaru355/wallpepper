@@ -88,6 +88,8 @@ bash site/scripts/deploy.sh
 
 Bump `version` in `apps/desktop/package.json` and `apps/mobile/app.json` (and `versionCode` for Android updates) before building. Old versions stay on the server under `/downloads/<version>/`. There is no macOS build yet (it needs a Mac).
 
+**Self-update.** Both apps read `/downloads/latest.json` (the manifest `publish.sh` switches last) and offer a release whose `version` is *higher* than the installed one, so always bump the version for a release. Desktop (packaged builds) checks 15 s after start and every 6 h: Windows downloads the installer (SHA-256 verified) and launches it; the Linux AppImage replaces itself and restarts; a `.deb` opens the download page. Android checks on launch and in Settings, downloads the APK and hands it to the system installer (Android accepts it only if it is signed with the same key, and asks once to allow installs from Wallpepper).
+
 ## Tests
 
 ```powershell

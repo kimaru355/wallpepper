@@ -93,3 +93,21 @@ test('browse controller mixes sources and tolerates failures', async () => {
   assert.equal(b.state.items.length, 1);
   assert.ok(b.state.errors.some((e) => e.sourceId === 'yandere'));
 });
+
+test('update check: version compare, platform pick, own-origin only', async () => {
+  const { compareVersions, checkForUpdate } = await import('../src/index.ts');
+  assert.ok(compareVersions('0.10.0', '0.9.2') > 0);
+  assert.equal(compareVersions('v1.0', '1.0.0'), 0);
+  assert.ok(compareVersions('0.1.0', '0.1.1') < 0);
+  const file = (platform: string, name: string, url = `/downloads/0.2.0/${name}`) => ({ id: name, file: name, url, platform, label: name, size: 1, sha256: 'x' });
+  const manifest = { version: '0.2.0', files: [file('android', 'a.apk'), file('linux', 'l.deb'), file('linux', 'l.AppImage')] };
+  const get = async () => manifest;
+  assert.equal(await checkForUpdate(get, '0.2.0', 'android'), null);
+  assert.equal(await checkForUpdate(get, '0.1.0', 'windows'), null);
+  const u = await checkForUpdate(get, '0.1.0', 'android');
+  assert.equal(u?.url, 'https://wallpepper.pcstack.top/downloads/0.2.0/a.apk');
+  const app = await checkForUpdate(get, '0.1.0', 'linux', (f) => f.find((x) => x.file.endsWith('.AppImage')));
+  assert.equal(app?.file.file, 'l.AppImage');
+  manifest.files = [file('android', 'a.apk', 'https://evil.example/a.apk')];
+  await assert.rejects(checkForUpdate(get, '0.1.0', 'android'));
+});

@@ -6,6 +6,7 @@ import { Settings } from './pages/Settings';
 import { Sources } from './pages/Sources';
 import { useAppState } from './hooks';
 import { useToasts } from './toast';
+import { UpdateButton, useUpdateListeners } from './update';
 
 const PAGES = [
   { id: 'browse', label: 'Browse', icon: '🔍' },
@@ -20,6 +21,7 @@ export function App() {
   const [page, setPage] = useState<PageId>('browse');
   const state = useAppState();
   const toasts = useToasts();
+  useUpdateListeners();
   return (
     <div className="shell">
       <nav className="sidebar">
@@ -30,6 +32,7 @@ export function App() {
           </button>
         ))}
         <div className="spacer" />
+        <UpdateButton compact />
         <div className="muted small">{state.local.auth ? `Signed in as ${state.local.auth.email}` : 'Not signed in'}</div>
       </nav>
       <main className="content">

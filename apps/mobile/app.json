@@ -3,7 +3,7 @@
     "name": "Wallpepper",
     "slug": "wallpepper",
     "scheme": "wallpepper",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -11,7 +11,8 @@
     "platforms": ["android"],
     "android": {
       "package": "app.wallpepper.mobile",
-      "permissions": ["android.permission.SET_WALLPAPER"],
+      "versionCode": 2,
+      "permissions": ["android.permission.SET_WALLPAPER", "android.permission.REQUEST_INSTALL_PACKAGES"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

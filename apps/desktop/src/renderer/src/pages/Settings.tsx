@@ -4,12 +4,14 @@ import { getCtx } from '../ctx';
 import { DeviceSettingsForm } from '../components';
 import { useAppState } from '../hooks';
 import { toast } from '../toast';
+import { checkNow, UpdateButton, useUpdate } from '../update';
 
 export function Settings() {
   const state = useAppState();
   const { store, platform, info } = getCtx();
   const [autostart, setAutostart] = useState(info.autostart);
   const [tray, setTray] = useState(info.closeToTray);
+  const update = useUpdate();
   const s = getDeviceSettings(state);
   const folder = state.local.folderPath;
 
@@ -48,8 +50,10 @@ export function Settings() {
           <button onClick={() => rotateNow(store, platform).then((w) => toast(w ? 'Wallpaper changed.' : 'No wallpapers in the selected group yet.', w ? 'ok' : 'info')).catch((e) => toast(e.message, 'error'))}>
             Change wallpaper now
           </button>
+          <button disabled={update.checking} onClick={() => void checkNow(true)}>{update.checking ? 'Checking…' : 'Check for updates'}</button>
+          <UpdateButton />
         </div>
-        <p className="muted small">Wallpepper {info.version} · {info.platform}</p>
+        <p className="muted small">Wallpepper {info.version} · {info.platform}{update.available ? ` · version ${update.available.version} is available` : ''}</p>
       </div>
     </div>
   );

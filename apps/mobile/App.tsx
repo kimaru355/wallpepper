@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getDeviceSettings } from '@wallpepper/core';
 import { syncBackgroundTask } from './src/background';
 import { bootstrap, useAppState } from './src/ctx';
@@ -9,6 +9,7 @@ import { BrowseScreen } from './src/screens/BrowseScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SourcesScreen } from './src/screens/SourcesScreen';
+import { checkUpdate, downloadAndInstall } from './src/update';
 import { colors } from './src/ui';
 
 const TABS = [
@@ -28,6 +29,19 @@ function Main() {
   useEffect(() => {
     void syncBackgroundTask(s);
   }, [s?.rotationEnabled, s?.mode, s?.syncEnabled, s?.rotationMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Offer a new release once per launch (the Settings tab can also check manually).
+  useEffect(() => {
+    checkUpdate()
+      .then((u) => {
+        if (!u) return;
+        Alert.alert('Update available', `Wallpepper ${u.version} is available (you have ${u.current}).`, [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Update', onPress: () => void downloadAndInstall(u).catch((e) => Alert.alert('Update failed', String(e?.message ?? e))) },
+        ]);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <View style={styles.root}>

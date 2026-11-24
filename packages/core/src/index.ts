@@ -6,3 +6,4 @@ export * from './sync.ts';
 export * from './browse.ts';
 export * from './rotation.ts';
 export * from './sources/index.ts';
+export * from './update.ts';
