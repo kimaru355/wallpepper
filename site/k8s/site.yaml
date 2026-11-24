@@ -1,0 +1,89 @@
+# Download site for https://wallpepper.pcstack.top (applied by site/scripts/deploy.sh, IMAGE is substituted).
+# Release binaries are NOT in the image: they sit in /srv/wallpepper-downloads on the node (see publish.sh).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallpepper-site
+  namespace: wallpepper
+  labels:
+    app.kubernetes.io/name: wallpepper-site
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wallpepper-site
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wallpepper-site
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: nginx
+          image: IMAGE
+          imagePullPolicy: Never
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: downloads, mountPath: /downloads, readOnly: true }
+      volumes:
+        - name: downloads
+          hostPath:
+            path: /srv/wallpepper-downloads
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wallpepper-site
+  namespace: wallpepper
+  labels:
+    app.kubernetes.io/name: wallpepper-site
+spec:
+  selector:
+    app.kubernetes.io/name: wallpepper-site
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+# "/" goes to the site. The API keeps its existing root paths via the backend's own Ingress
+# (/auth /sync /devices /me /health), which Traefik prefers because those prefixes are longer.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wallpepper-site
+  namespace: wallpepper
+  labels:
+    app.kubernetes.io/name: wallpepper-site
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: wallpepper.pcstack.top
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wallpepper-site
+                port: { name: http }
+  tls:
+    - hosts: [wallpepper.pcstack.top]
+      secretName: wallpepper-backend-tls   # certificate is requested by the backend Ingress (same host); reused here

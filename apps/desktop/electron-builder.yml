@@ -1,0 +1,29 @@
+appId: app.wallpepper.desktop
+productName: Wallpepper
+copyright: Wallpepper
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+asar: true
+artifactName: Wallpepper-${version}-${os}-${arch}.${ext}
+win:
+  target:
+    - { target: nsis, arch: [x64] }
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: Wallpepper-Setup-${version}.${ext}
+mac:
+  target: [dmg]
+  category: public.app-category.graphics-design
+linux:
+  target: [AppImage, deb]
+  category: Graphics
+  maintainer: Wallpepper <noreply@wallpepper.pcstack.top>
+  icon: build/icon.png
+  executableName: wallpepper
+deb:
+  packageName: wallpepper

@@ -1,0 +1,30 @@
+{
+  "name": "@wallpepper/mobile",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "private": true,
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild --platform android",
+    "typecheck": "tsc --noEmit",
+    "bundle": "expo export --platform android"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~58.0.26",
+    "expo-background-task": "~58.0.13",
+    "expo-dev-client": "~58.0.21",
+    "expo-device": "~58.0.5",
+    "expo-file-system": "~58.0.14",
+    "expo-media-library": "~58.0.14",
+    "expo-status-bar": "~58.0.5",
+    "expo-task-manager": "~58.0.14",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  }
+}

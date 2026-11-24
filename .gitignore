@@ -1,0 +1,19 @@
+node_modules/
+dist/
+out/
+build/
+.expo/
+android/
+ios/
+*.db
+*.log
+.env
+data/
+
+# signing keys
+apps/mobile/signing/
+*.keystore
+
+# release artifacts
+releases/
+apps/desktop/dist/

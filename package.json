@@ -1,0 +1,16 @@
+{
+  "name": "wallpepper",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Wallpepper - wallpaper browser, manager and sync for Android, Windows, macOS and Linux",
+  "scripts": {
+    "typecheck": "npm run typecheck -w packages/core && npm run typecheck -w apps/desktop",
+    "test": "npm run test -w packages/core",
+    "desktop": "npm run dev -w apps/desktop",
+    "mobile:typecheck": "npm run typecheck --prefix apps/mobile"
+  },
+  "workspaces": [
+    "packages/core",
+    "apps/desktop"
+  ]
+}

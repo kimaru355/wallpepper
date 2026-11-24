@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallpepper – wallpapers that follow you everywhere</title>
+  <meta name="description" content="Browse anime, movie, Linux and tech wallpapers from many sources, set them on your home and lock screen, and sync your library across Android, Windows and Linux.">
+  <meta name="theme-color" content="#0e0f13">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="wrap top">
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" width="32" height="32"> Wallpepper</a>
+    <nav>
+      <a href="#download">Download</a>
+      <a href="#install">Install</a>
+      <a href="#sync">Sync</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <h1>Wallpapers that<br><span class="grad">follow you everywhere.</span></h1>
+      <p class="lead">Browse anime, movies &amp; series, Linux and tech wallpapers from six sources (and any you add), set them on your home <em>and</em> lock screen, and keep your collections in sync across your phone and computers.</p>
+
+      <div class="cta" id="cta">
+        <a class="btn primary" id="primary-btn" href="#download">Download</a>
+        <span class="muted" id="primary-note">Free · no ads</span>
+      </div>
+    </section>
+
+    <section class="wrap features">
+      <div class="card"><h3>6+ sources</h3><p>Konachan, Yande.re, Wallhaven, TMDB, a Linux wallpaper repo and Unsplash photography. Add your own source from a GitHub repo or any JSON API.</p></div>
+      <div class="card"><h3>Home &amp; lock screen</h3><p>Set either or both. Prefer the OS to manage it? Switch to folder mode and Wallpepper just downloads into the folder your system reads.</p></div>
+      <div class="card"><h3>Groups &amp; playlists</h3><p>Make themes like “anime” or “work”, add wallpapers with one tap, and let a group rotate automatically on a schedule.</p></div>
+      <div class="card"><h3>Per-device sync</h3><p>Phone on “anime”, PC on “All”? Each device has its own settings, and you can change them from any device.</p></div>
+    </section>
+
+    <section class="wrap" id="download">
+      <h2>Download</h2>
+      <p class="muted" id="version-line">Loading latest version…</p>
+      <div class="downloads" id="downloads">
+        <noscript><p>Enable JavaScript to see the downloads, or browse <a href="/downloads/">the downloads folder</a>.</p></noscript>
+      </div>
+      <p class="muted small">Builds are unsigned. Compare the SHA-256 shown next to each file if you want to verify your download. macOS isn’t available yet.</p>
+    </section>
+
+    <section class="wrap" id="install">
+      <h2>Install</h2>
+      <div class="steps">
+        <details open id="step-android">
+          <summary>Android <span class="muted">(7.0 or newer)</span></summary>
+          <ol>
+            <li>Download the APK on your phone and open it.</li>
+            <li>Android will ask to allow installs from your browser (or Files app): allow it for this one install.</li>
+            <li>Tap <b>Install</b>. If Play Protect shows a warning for an app it hasn’t seen, choose <b>Install anyway</b> — the app is signed with our release key.</li>
+            <li>Open Wallpepper, then allow photo saving the first time you download a wallpaper.</li>
+          </ol>
+          <p class="muted small">Automatic wallpaper switching runs in the background. If your phone maker stops background apps, exclude Wallpepper from battery optimisation.</p>
+        </details>
+        <details id="step-windows">
+          <summary>Windows <span class="muted">(10 / 11, 64-bit)</span></summary>
+          <ol>
+            <li>Run <b>Wallpepper-Setup</b>.</li>
+            <li>Windows SmartScreen may say “Windows protected your PC” because the installer is unsigned: click <b>More info → Run anyway</b>.</li>
+            <li>Wallpepper lives in the system tray, so scheduled wallpaper changes keep running when the window is closed.</li>
+          </ol>
+        </details>
+        <details id="step-linux">
+          <summary>Linux <span class="muted">(x86-64)</span></summary>
+          <p><b>AppImage</b> (any distro):</p>
+          <pre><code>chmod +x Wallpepper-*.AppImage
+./Wallpepper-*.AppImage</code></pre>
+          <p><b>.deb</b> (Debian, Ubuntu, Mint…):</p>
+          <pre><code>sudo apt install ./Wallpepper-*-linux-amd64.deb</code></pre>
+          <p class="muted small">Wallpaper setting supports GNOME, Cinnamon, MATE, KDE Plasma, XFCE, sway, or feh/nitrogen. On other desktops use “Download to folder” mode.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="wrap" id="sync">
+      <h2>Accounts &amp; sync</h2>
+      <p>Create a free account inside the app (<b>Account &amp; Devices</b>) and sign in on your other devices. Wallpepper syncs your saved wallpaper <em>links</em>, groups, custom sources and each device’s settings.</p>
+      <ul class="list">
+        <li>Images themselves are never uploaded — only the links to them.</li>
+        <li>Source API keys (for example TMDB) stay on the device and are not synced.</li>
+        <li>You can delete your account and everything synced to it at any time.</li>
+        <li>Everything works without an account too; sign in whenever you want sync.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <span>© Wallpepper</span>
+    <span class="muted">Wallpaper images belong to their authors and the sources they come from.</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
