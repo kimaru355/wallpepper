@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { getDeviceSettings } from '@wallpepper/core';
 import { syncBackgroundTask } from './src/background';
 import { bootstrap, useAppState } from './src/ctx';
+import { useInsets } from './src/insets';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { BrowseScreen } from './src/screens/BrowseScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
@@ -23,6 +24,7 @@ const TABS = [
 function Main() {
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('browse');
   const state = useAppState();
+  const insets = useInsets();
   const s = getDeviceSettings(state);
 
   // Keep the OS background scheduler in line with this device's (possibly remotely edited) settings.
@@ -46,7 +48,7 @@ function Main() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <View style={styles.header}><Text style={styles.brand}>Wallpepper</Text></View>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}><Text style={styles.brand}>Wallpepper</Text></View>
       <View style={{ flex: 1 }}>
         {/* Browse stays mounted to keep its results and scroll position. */}
         <View style={{ flex: 1, display: tab === 'browse' ? 'flex' : 'none' }}><BrowseScreen /></View>
@@ -54,7 +56,7 @@ function Main() {
           <View key={id} style={{ flex: 1 }}><Screen /></View>
         ))}
       </View>
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {TABS.map((t) => (
           <Pressable key={t.id} style={styles.tab} onPress={() => setTab(t.id)}>
             <Text style={{ fontSize: 18, opacity: tab === t.id ? 1 : 0.5 }}>{t.icon}</Text>
@@ -80,8 +82,8 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  header: { paddingHorizontal: 16, paddingTop: 36, paddingBottom: 6 },
+  header: { paddingHorizontal: 16, paddingBottom: 6 },
   brand: { color: colors.accent, fontSize: 22, fontWeight: '800' },
-  tabs: { flexDirection: 'row', borderTopColor: colors.line, borderTopWidth: 1, backgroundColor: colors.panel, paddingBottom: 8 },
+  tabs: { flexDirection: 'row', borderTopColor: colors.line, borderTopWidth: 1, backgroundColor: colors.panel },
   tab: { flex: 1, alignItems: 'center', paddingTop: 8, gap: 2 },
 });

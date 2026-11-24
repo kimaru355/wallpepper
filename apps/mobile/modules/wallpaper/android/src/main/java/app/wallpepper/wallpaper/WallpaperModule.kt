@@ -2,6 +2,8 @@ package app.wallpepper.wallpaper
 
 import android.app.WallpaperManager
 import android.net.Uri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -15,6 +17,21 @@ import java.io.FileInputStream
 class WallpaperModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("Wallpaper")
+
+    // Status/navigation bar sizes in dp, so the edge-to-edge UI can pad itself without a native safe-area library.
+    Function("getSystemInsets") {
+      val activity = appContext.currentActivity
+      val decor = activity?.window?.decorView
+      val insets = decor?.let { ViewCompat.getRootWindowInsets(it) }
+        ?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+      val density = (activity?.resources?.displayMetrics?.density ?: 1f).toDouble()
+      mapOf(
+        "top" to (insets?.top ?: 0) / density,
+        "bottom" to (insets?.bottom ?: 0) / density,
+        "left" to (insets?.left ?: 0) / density,
+        "right" to (insets?.right ?: 0) / density,
+      )
+    }
 
     AsyncFunction("isSupported") {
       val context = appContext.reactContext ?: return@AsyncFunction false
