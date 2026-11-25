@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import { hostname } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { setWallpaperFile, type Fit, type Target } from './wallpaper.ts';
+import { setWallpaperFile, setWallpaperFiles, type Fit, type Target } from './wallpaper.ts';
 import * as updater from './updater.ts';
 
 const UA = 'Wallpepper/0.1 (+desktop)';
@@ -110,6 +110,26 @@ function registerIpc() {
     void pruneCache(dir, file);
     return { note };
   });
+  /** One wallpaper per display. Entries are image links, or finished JPEGs drawn by the renderer (crop / blur). */
+  ipcMain.handle('wallpaper:setMany', async (_e, entries: ({ id: string; url: string } | { data: ArrayBuffer; name: string })[], target: Target, fit: Fit) => {
+    const dir = join(app.getPath('userData'), 'cache');
+    await fs.mkdir(dir, { recursive: true });
+    const files: string[] = [];
+    for (const e of (Array.isArray(entries) ? entries : []).slice(0, 16)) {
+      if ('data' in e) {
+        const file = join(dir, `r-${String(e.name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}.jpg`);
+        await fs.writeFile(file, Buffer.from(e.data));
+        files.push(file);
+      } else {
+        files.push(await fetchToFile(e.url, dir, hash(e.id)));
+      }
+    }
+    if (!files.length) throw new Error('Nothing to set');
+    const note = await setWallpaperFiles(files, target, fit ?? 'fill');
+    for (const f of files) void pruneCache(dir, f);
+    return { note };
+  });
+  ipcMain.handle('app:displays', () => screen.getAllDisplays().length);
   ipcMain.handle('wallpaper:saveData', async (_e, data: ArrayBuffer, folder: string, subPath: string[], name: string) => {
     const clean = cleanSub(subPath);
     const dir = resolve(join(folder, ...clean));

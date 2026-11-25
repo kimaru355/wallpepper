@@ -9,6 +9,7 @@ import {
   SyncManager,
   type BrowseCache,
   type BrowseFilters,
+  type Orientation,
   type Http,
   type PlatformActions,
   type Wallpaper,
@@ -36,13 +37,13 @@ function shortName(w: { id: string; title?: string }): string {
 }
 
 /** Another browse list (e.g. one recommended collection) sharing the saved-results cache. */
-export function makeBrowse(filters: Partial<BrowseFilters>): BrowseController {
+export function makeBrowse(filters: Partial<BrowseFilters>, orientation: Orientation = 'landscape'): BrowseController {
   const { store, http } = getCtx();
   const cache: BrowseCache = {
     get: (k) => cacheGet<Wallpaper[]>(store, k)?.data,
     set: (k, v) => cachePut(store, k, v),
   };
-  return new BrowseController(() => getSources(store.state), http, 'landscape', filters, cache);
+  return new BrowseController(() => getSources(store.state), http, orientation, filters, cache);
 }
 
 /** Image url served from the on-disk cache (works offline). */
@@ -85,6 +86,20 @@ export async function bootstrap(): Promise<Ctx> {
       } else {
         r = await api.setWallpaper({ id: w.id, url: w.url }, target, fit);
       }
+      if (r.note) toast(r.note);
+    },
+    displays: () => api.displays(),
+    setWallpapers: async (items, target) => {
+      // crops and blurred backgrounds are drawn here; plain images are fetched by the main process
+      const entries = await Promise.all(
+        items.map(async ({ w, fit, crop }) =>
+          fit === 'blur' || crop
+            ? { data: await composeImage(w.url, fit, crop, info.screen.width, info.screen.height), name: `${shortName(w)}-${fit}${crop ? '-crop' : ''}` }
+            : { id: w.id, url: w.url },
+        ),
+      );
+      const plain = items.find((i) => i.fit !== 'blur' && !i.crop);
+      const r = await api.setWallpapers(entries, target, plain?.fit ?? 'fill');
       if (r.note) toast(r.note);
     },
   };

@@ -95,13 +95,14 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
   const { store, info } = getCtx();
   const s = getDeviceSettings(useAppState());
   const [mode, setMode] = useState<'apply' | 'folder'>(s?.mode ?? 'apply');
-  const [minutes, setMinutes] = useState(s && INTERVALS.includes(s.rotationMinutes) ? s.rotationMinutes : 360);
+  // 0 = keep the wallpaper you set (static); nothing changes it unless you ask
+  const [minutes, setMinutes] = useState(s?.rotationEnabled && INTERVALS.includes(s.rotationMinutes) ? s.rotationMinutes : 0);
   const [autostart, setAutostart] = useState(true);
 
   const save = async () => {
-    updateDeviceSettings(store, store.state.local.deviceId, { mode, rotationEnabled: mode === 'apply', rotationMinutes: minutes });
+    updateDeviceSettings(store, store.state.local.deviceId, { mode, rotationEnabled: mode === 'apply' && minutes > 0, rotationMinutes: minutes || s?.rotationMinutes || 360 });
     // The app can only change wallpapers while it is running, so it should start with the computer (minimised to the tray).
-    if (mode === 'apply') {
+    if (mode === 'apply' && minutes > 0) {
       await window.api.setAutostart(autostart);
       await window.api.setCloseToTray(true);
     }
@@ -118,7 +119,7 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       <h1>Who changes your wallpaper?</h1>
       <p className="muted">You can change this any time in Settings.</p>
       {option('apply', 'Wallpepper', 'Recommended', [
-        'Changes your wallpaper on the schedule you choose',
+        'Keeps the wallpaper you pick, or changes it on a schedule: your choice',
         'Uses your fit setting and your groups and sub-groups',
         'Light on resources: it only does work when a change is due and keeps images cached',
       ])}
@@ -129,15 +130,16 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       ])}
       {mode === 'apply' && (
         <div className="source form">
-          <label>Change the wallpaper every
+          <label>Wallpaper
             <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-              {INTERVALS.map((m) => <option key={m} value={m}>{m >= 1440 ? 'day' : m >= 60 ? `${m / 60} ${m === 60 ? 'hour' : 'hours'}` : `${m} minutes`}</option>)}
+              <option value={0}>Keep the one I set (no automatic changes)</option>
+              {INTERVALS.map((m) => <option key={m} value={m}>Change it every {m >= 1440 ? 'day' : m >= 60 ? `${m / 60} ${m === 60 ? 'hour' : 'hours'}` : `${m} minutes`}</option>)}
             </select>
           </label>
-          <label className="check">
+          {minutes > 0 && <label className="check">
             <input type="checkbox" checked={autostart} onChange={(e) => setAutostart(e.target.checked)} />
             Start with {info.platform === 'windows' ? 'Windows' : 'my computer'}, minimised to the tray (needed so changes keep happening)
-          </label>
+          </label>}
         </div>
       )}
       <div className="row"><button onClick={onBack}>Back</button><button className="primary" onClick={() => void save()}>Continue</button></div>

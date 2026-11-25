@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   clearVariant,
   compatStatus,
   deviceShape,
   ensureDimensions,
-  findAlternatives,
+  CATEGORIES,
+  searchSeed,
+  type CategoryId,
   getDeviceSettings,
   getVariant,
-  otherShape,
   placeCrop,
   setVariant,
   shapeOf,
@@ -16,8 +17,8 @@ import {
   type Wallpaper,
 } from '@wallpepper/core';
 import { CachedImg, Icon, Modal } from './components';
-import { getCtx } from './ctx';
-import { useAppState } from './hooks';
+import { getCtx, makeBrowse } from './ctx';
+import { useAppState, useBrowseOf } from './hooks';
 import { probeImage } from './render';
 import { toast } from './toast';
 
@@ -61,30 +62,17 @@ const WHERE: Record<Shape, string> = { portrait: 'phones', landscape: 'computers
 
 function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => void }) {
   const state = useAppState();
-  const { store, http } = getCtx();
+  const { store } = getCtx();
   const [w, setW] = useState(initial);
-  const [alts, setAlts] = useState<Wallpaper[] | null>(null);
-  const [picked, setPicked] = useState<Wallpaper | null>(null);
   const [cropping, setCropping] = useState(false);
+  const [searching, setSearching] = useState(false);
   const status = compatStatus(state, w);
   const need = status.needs;
 
-  // step 1 again (the wallpaper may have been opened without a size), then step 2: look for similar images
+  // step 1 again: the wallpaper may have been opened without a size
   useEffect(() => {
     let live = true;
-    (async () => {
-      const full = (await ensureDimensions(store, w.id, probeImage)) ?? w;
-      if (!live) return;
-      setW(full);
-      const s = shapeOf(full);
-      if (s === 'unknown' || s === 'square') return setAlts([]);
-      try {
-        const found = await findAlternatives(store, http, full, otherShape(s));
-        if (live) setAlts(found);
-      } catch {
-        if (live) setAlts([]);
-      }
-    })();
+    void ensureDimensions(store, w.id, probeImage).then((full) => live && full && setW(full));
     return () => { live = false; };
   }, [w.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -107,6 +95,19 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
       />
     );
   }
+  if (searching && need) {
+    return (
+      <SearchSimilar
+        w={w}
+        target={need}
+        onCancel={() => setSearching(false)}
+        onPick={(alt) => {
+          setVariant(store, w, { kind: 'image', wallpaper: alt });
+          done(`Saved: computers and phones now each get a picture of the right shape.`);
+        }}
+      />
+    );
+  }
 
   const me = deviceShape(getDeviceSettings(state)?.platform);
   const stateText: Record<string, string> = {
@@ -118,12 +119,14 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
     none: 'Not set yet',
   };
   const shape = status.shape;
+  const chosen = status.variant?.choice.kind === 'image' ? status.variant.choice.wallpaper : null;
 
   return (
     <Modal onClose={onClose} wide>
       <h3 style={{ marginTop: 0 }}>Compatibility</h3>
       <div className="row" style={{ alignItems: 'flex-start', gap: 14 }}>
         <div className={'compat-thumb ' + (shape === 'portrait' ? 'portrait' : 'landscape')}><CachedImg url={w.thumb} /></div>
+        {chosen && need && <div className={'compat-thumb ' + need}><CachedImg url={chosen.thumb} /></div>}
         <div>
           <strong>{shape === 'unknown' ? 'Checking the size…' : shape === 'square' ? 'Square image' : `A ${shape} image`}</strong>
           {w.width && w.height ? <div className="muted small">{w.width}×{w.height}</div> : null}
@@ -138,26 +141,19 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
           <p className="muted">
             This is a {shape} image, so it will not fit {WHERE[need]} well. Pick how it should look there{need === me ? ' (that is this computer)' : ''}.
           </p>
-          <h4 style={{ marginBottom: 6 }}>Similar {need} images</h4>
-          {alts === null ? <div className="muted small">Looking for matches…</div>
-            : alts.length === 0 ? <div className="muted small">No similar {need} image found. You can crop this one or use a blurred background.</div>
-            : (
-              <div className={'alts ' + need}>
-                {alts.map((a) => (
-                  <button key={a.id} className={'alt' + (picked?.id === a.id ? ' on' : '')} onClick={() => setPicked(picked?.id === a.id ? null : a)}>
-                    <CachedImg url={a.thumb} />
-                    {picked?.id === a.id && <span className="tick"><Icon name="check" size={14} /></span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          <div className="row" style={{ marginTop: 10 }}>
-            <button className="primary ibtn" disabled={!picked} onClick={() => { setVariant(store, w, { kind: 'image', wallpaper: picked! }); done('Saved.'); }}><Icon name="check" size={16} />Use the selected image</button>
-          </div>
-          <div className="muted small" style={{ margin: '14px 0 6px' }}>Or keep this image:</div>
-          <div className="row">
-            <button className="ibtn" onClick={() => setCropping(true)}><Icon name="expand" size={16} />Crop it</button>
-            <button className="ibtn" onClick={() => { setVariant(store, w, { kind: 'blur' }); done('Saved.'); }}><Icon name="image" size={16} />Blurred background</button>
+          <div className="compat-options">
+            <button className="option" onClick={() => setSearching(true)}>
+              <strong className="row"><Icon name="search" size={16} />Search similar</strong>
+              <span className="muted small">Search for a {need} picture of the same thing (e.g. the same character) and use that one there.</span>
+            </button>
+            <button className="option" onClick={() => setCropping(true)}>
+              <strong className="row"><Icon name="expand" size={16} />Crop it</strong>
+              <span className="muted small">Use the part of this picture you choose.</span>
+            </button>
+            <button className="option" onClick={() => { setVariant(store, w, { kind: 'blur' }); done('Saved.'); }}>
+              <strong className="row"><Icon name="image" size={16} />Blurred background</strong>
+              <span className="muted small">Show the whole picture over a blurred copy of itself.</span>
+            </button>
           </div>
         </>
       )}
@@ -165,6 +161,79 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
       <div className="row end" style={{ marginTop: 16 }}>
         {status.variant && <button className="danger ibtn" onClick={() => { clearVariant(store, w.id); done('Choice removed.'); }}><Icon name="trash" size={16} />Remove choice</button>}
         <button onClick={onClose}>{status.variant ? 'Done' : 'Skip for now'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ search page for the other orientation
+
+/**
+ * "Search similar": the Browse page, but showing only pictures of the other orientation. Starts from the words of the
+ * wallpaper's title; the user searches freely (e.g. "naruto" or "kakashi") and picks the substitute.
+ */
+function SearchSimilar({ w, target, onCancel, onPick }: { w: Wallpaper; target: Shape; onCancel: () => void; onPick: (alt: Wallpaper) => void }) {
+  const state = useAppState();
+  const seed = useMemo(() => searchSeed(state, w), [w.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [category, setCategory] = useState<CategoryId>(seed.category);
+  const [query, setQuery] = useState(seed.query);
+  const [picked, setPicked] = useState<Wallpaper | null>(null);
+  const browse = useMemo(() => makeBrowse({ category: seed.category, query: seed.query, sort: 'popular' }, target), [target]); // eslint-disable-line react-hooks/exhaustive-deps
+  const b = useBrowseOf(browse);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { void browse.reload(); }, [browse]);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver((e) => e[0].isIntersecting && void browse.loadMore(), { root: scroller.current, rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [browse, b.items.length]);
+
+  const search = (patch: { category?: CategoryId; query?: string }) => {
+    setPicked(null);
+    void browse.setFilters({ ...patch, tag: undefined, sourceId: 'all' });
+  };
+
+  return (
+    <Modal onClose={onCancel} wide>
+      <div className="row between" style={{ marginBottom: 10 }}>
+        <div className="row">
+          <button className="ibtn" onClick={onCancel}><Icon name="chevronLeft" size={16} />Back</button>
+          <div>
+            <h3 style={{ margin: 0 }}>Find a {target} version</h3>
+            <div className="muted small">Only {target} pictures are shown, so whatever you pick fits {WHERE[target]}.</div>
+          </div>
+        </div>
+        <div className={'compat-thumb ' + (target === 'portrait' ? 'landscape' : 'portrait')} title="The picture you are replacing"><CachedImg url={w.thumb} /></div>
+      </div>
+      <div className="chips" style={{ marginBottom: 8 }}>
+        {CATEGORIES.map((c) => (
+          <button key={c.id} className={'chip' + (c.main ? ' main' : '') + (category === c.id ? ' on' : '')} onClick={() => { setCategory(c.id); search({ category: c.id }); }}>{c.label}</button>
+        ))}
+      </div>
+      <form className="row" onSubmit={(e) => { e.preventDefault(); search({ query }); }}>
+        <input className="grow" autoFocus placeholder="Search, e.g. naruto or kakashi" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <button className="primary ibtn" type="submit"><Icon name="search" size={16} />Search</button>
+      </form>
+      <div ref={scroller} className="alt-results">
+        {b.errors.map((e) => <div key={e.sourceId} className="notice">{e.sourceName}: {e.message}</div>)}
+        {!b.loading && !b.items.length && <div className="empty">No {target} pictures found. Try other words or another category.</div>}
+        <div className={'alts ' + target}>
+          {b.items.map((a) => (
+            <button key={a.id} className={'alt' + (picked?.id === a.id ? ' on' : '')} onClick={() => setPicked(picked?.id === a.id ? null : a)} onDoubleClick={() => onPick(a)}>
+              <CachedImg url={a.thumb} />
+              {picked?.id === a.id && <span className="tick"><Icon name="check" size={14} /></span>}
+            </button>
+          ))}
+        </div>
+        <div ref={sentinel} className="sentinel">{b.loading ? 'Loading…' : ''}</div>
+      </div>
+      <div className="row end" style={{ marginTop: 12 }}>
+        <button onClick={onCancel}>Cancel</button>
+        <button className="primary ibtn" disabled={!picked} onClick={() => picked && onPick(picked)}><Icon name="check" size={16} />Use this picture</button>
       </div>
     </Modal>
   );

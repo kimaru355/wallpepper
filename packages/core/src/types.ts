@@ -127,6 +127,8 @@ export interface DeviceSettings {
   syncEnabled: boolean;
   /** How wallpapers are fitted to the screen. */
   fit: FitMode;
+  /** Computers with several displays: a different wallpaper on each (default on). */
+  perDisplay?: boolean;
 }
 
 export interface Device {

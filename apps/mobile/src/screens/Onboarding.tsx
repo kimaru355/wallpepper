@@ -118,7 +118,8 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
   const state = useAppState();
   const s = getDeviceSettings(state);
   const [mode, setMode] = useState<'apply' | 'folder'>(s?.mode ?? 'apply');
-  const [minutes, setMinutes] = useState(s && INTERVALS.includes(s.rotationMinutes) ? s.rotationMinutes : 360);
+  // 0 = keep the wallpaper you set (static); nothing changes it unless you ask
+  const [minutes, setMinutes] = useState(s?.rotationEnabled && INTERVALS.includes(s.rotationMinutes) ? s.rotationMinutes : 0);
   const [unrestricted, setUnrestricted] = useState(isBatteryUnrestricted());
   const asked = useRef(false);
 
@@ -131,8 +132,8 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
   const save = () => {
     updateDeviceSettings(store, store.state.local.deviceId, {
       mode,
-      rotationEnabled: mode === 'apply',
-      rotationMinutes: minutes,
+      rotationEnabled: mode === 'apply' && minutes > 0,
+      rotationMinutes: minutes || s?.rotationMinutes || 360,
     });
     onNext();
   };
@@ -155,7 +156,7 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       <Text style={styles.h1}>Who changes your wallpaper?</Text>
       <Text style={[text.muted, { marginBottom: 16 }]}>You can change this any time in Settings.</Text>
       {option('apply', 'Wallpepper', 'Recommended', [
-        'Changes your wallpaper on the schedule you choose',
+        'Keeps the wallpaper you pick, or changes it on a schedule: your choice',
         'Uses your fit setting and your groups and sub-groups',
         'Battery friendly: runs on Android’s own scheduler, nothing stays running in the background',
       ])}
@@ -168,11 +169,13 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       {mode === 'apply' ? (
         <Card style={{ marginTop: 8 }}>
           <Select
-            label="Change the wallpaper every"
+            label="Wallpaper"
             value={String(minutes)}
-            options={INTERVALS.map((m) => ({ value: String(m), label: m >= 1440 ? 'Day' : `${m / 60} ${m === 60 ? 'hour' : 'hours'}` }))}
+            options={[{ value: '0', label: 'Keep the one I set (no automatic changes)' }, ...INTERVALS.map((m) => ({ value: String(m), label: `Change it every ${m >= 1440 ? 'day' : `${m / 60} ${m === 60 ? 'hour' : 'hours'}`}` }))]}
             onChange={(v) => setMinutes(Number(v))}
           />
+          {minutes > 0 ? (
+          <>
           <Text style={text.small}>Longer gaps use less battery. Android runs background work every 15 minutes at the very fastest.</Text>
           <View style={{ height: 12 }} />
           {unrestricted ? (
@@ -194,6 +197,10 @@ function EngineStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
                 }}
               />
             </>
+          )}
+          </>
+          ) : (
+            <Text style={text.small}>The wallpaper only changes when you set one. You can turn on automatic changes later in Settings.</Text>
           )}
         </Card>
       ) : null}

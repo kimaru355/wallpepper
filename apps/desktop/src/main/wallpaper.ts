@@ -177,3 +177,125 @@ export async function setWallpaperFile(file: string, target: Target, fit: Fit = 
   if (process.platform === 'darwin') return setMac(file, target, fit);
   return setLinux(file, target, fit);
 }
+
+// ---------- several displays: one wallpaper per display ----------
+
+/** IDesktopWallpaper position values. */
+const WIN_POSITION: Record<Fit, number> = { center: 0, tile: 1, stretch: 2, fit: 3, fill: 4, span: 5 };
+
+// Windows 8+ IDesktopWallpaper COM interface: sets a wallpaper per monitor. Inactive monitors are skipped.
+const WIN_MULTI = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential)] public struct WpRect { public int Left, Top, Right, Bottom; }
+[ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IWpDesktopWallpaper {
+  void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+  [return: MarshalAs(UnmanagedType.LPWStr)] string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
+  [return: MarshalAs(UnmanagedType.LPWStr)] string GetMonitorDevicePathAt(uint monitorIndex);
+  uint GetMonitorDevicePathCount();
+  WpRect GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
+  void SetBackgroundColor(uint color);
+  uint GetBackgroundColor();
+  void SetPosition(int position);
+}
+[ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")] public class WpDesktopWallpaperClass {}
+public static class WpMulti {
+  public static int Apply(string[] files, int position) {
+    var dw = (IWpDesktopWallpaper)new WpDesktopWallpaperClass();
+    dw.SetPosition(position);
+    uint n = dw.GetMonitorDevicePathCount();
+    int used = 0;
+    for (uint i = 0; i < n; i++) {
+      string id = dw.GetMonitorDevicePathAt(i);
+      try { var r = dw.GetMonitorRECT(id); if (r.Right - r.Left <= 0) continue; } catch { continue; }
+      dw.SetWallpaper(id, files[used % files.Length]);
+      used++;
+    }
+    return used;
+  }
+}
+"@
+$files = $env:WP_PATHS -split '\|'
+if ([WpMulti]::Apply($files, [int]$env:WP_POS) -lt 1) { throw 'No active monitor found' }
+`;
+
+const KDE_FILL: Record<Fit, number> = { stretch: 0, fit: 1, fill: 2, tile: 3, center: 6, span: 2 };
+
+async function setLinuxMany(files: string[], fit: Fit): Promise<string | undefined> {
+  const desktop = (process.env.XDG_CURRENT_DESKTOP ?? process.env.DESKTOP_SESSION ?? '').toLowerCase();
+  if (/kde|plasma/.test(desktop)) {
+    const script =
+      `var p=${JSON.stringify(files.map((f) => pathToFileURL(f).toString()))};var ds=desktops();` +
+      `for(var i=0;i<ds.length;i++){var d=ds[i];d.wallpaperPlugin="org.kde.image";` +
+      `d.currentConfigGroup=["Wallpaper","org.kde.image","General"];d.writeConfig("Image",p[i%p.length]);d.writeConfig("FillMode",${KDE_FILL[fit] ?? 2});}`;
+    for (const q of ['qdbus6', 'qdbus', 'qdbus-qt5']) {
+      if (await tryRun(q, ['org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.evaluateScript', script])) return undefined;
+    }
+    throw new Error('Could not reach Plasma (qdbus not found).');
+  }
+  if (/xfce/.test(desktop)) {
+    const props = (await run('xfconf-query', ['-c', 'xfce4-desktop', '-l'])).split('\n').filter((p) => p.endsWith('/last-image'));
+    // /backdrop/screen0/<monitor>/workspace0/last-image: one monitor may have several workspaces
+    const monitors = [...new Set(props.map((p) => p.split('/').slice(0, 4).join('/')))];
+    for (const p of props) {
+      const file = files[monitors.indexOf(p.split('/').slice(0, 4).join('/')) % files.length];
+      await run('xfconf-query', ['-c', 'xfce4-desktop', '-p', p, '-s', file]);
+      await tryRun('xfconf-query', ['-c', 'xfce4-desktop', '-p', p.replace(/last-image$/, 'image-style'), '-n', '-t', 'int', '-s', XFCE_STYLE[fit]]);
+    }
+    return undefined;
+  }
+  if (process.env.SWAYSOCK) {
+    const outputs = (JSON.parse(await run('swaymsg', ['-t', 'get_outputs', '-r'])) as { name: string; active: boolean }[]).filter((o) => o.active);
+    for (let i = 0; i < outputs.length; i++) await run('swaymsg', ['output', outputs[i].name, 'bg', files[i % files.length], SWAY_MODE[fit]]);
+    return undefined;
+  }
+  if (await has('feh')) {
+    await run('feh', [FEH_FLAG[fit], ...files]); // one file per screen, in screen order
+    return undefined;
+  }
+  if (await has('nitrogen')) {
+    for (let i = 0; i < files.length; i++) await run('nitrogen', [`--head=${i}`, NITROGEN_FLAG[fit], '--save', files[i]]);
+    return undefined;
+  }
+  // GNOME, Cinnamon, MATE: one picture for all displays
+  await setLinux(files[0], 'home', fit);
+  return 'This desktop shows one wallpaper on all displays.';
+}
+
+/**
+ * A different wallpaper on each display (files are used in display order and repeat when there are fewer).
+ * The lock screen gets the first one. Resolves to an optional note for the user.
+ */
+export async function setWallpaperFiles(files: string[], target: Target, fit: Fit = 'fill'): Promise<string | undefined> {
+  if (files.length < 2) return setWallpaperFile(files[0], target, fit);
+  const notes: string[] = [];
+  if (target !== 'lock') {
+    if (process.platform === 'win32') {
+      await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WIN_MULTI], {
+        WP_PATHS: files.join('|'),
+        WP_POS: String(WIN_POSITION[fit] ?? 4),
+      });
+    } else if (process.platform === 'darwin') {
+      await run('osascript', [
+        '-e', 'set ps to paragraphs of (system attribute "WP_PATHS")',
+        '-e', 'tell application "System Events"',
+        '-e', 'set n to count of desktops',
+        '-e', 'repeat with i from 1 to n',
+        '-e', 'set picture of desktop i to POSIX file (item ((((i - 1) mod (count of ps)) + 1)) of ps)',
+        '-e', 'end repeat',
+        '-e', 'end tell',
+      ], { WP_PATHS: files.join('\n') });
+    } else {
+      const note = await setLinuxMany(files, fit);
+      if (note) notes.push(note);
+    }
+  }
+  if (target !== 'home') {
+    const note = await setWallpaperFile(files[0], 'lock', fit).catch((e: Error) => `The lock screen could not be changed (${e.message}).`);
+    if (note) notes.push(note);
+  }
+  return notes.join(' ') || undefined;
+}

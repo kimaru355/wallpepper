@@ -4,7 +4,7 @@ import { cachedUri, ensureCached } from './imageCache';
 import { colors, Icon } from './ui';
 
 /** Image that is kept on the device: shows the saved copy when there is one (works offline) and saves it otherwise. */
-export function CachedImage({ uri, style, resizeMode = 'cover' }: { uri: string; style?: StyleProp<ImageStyle>; resizeMode?: 'cover' | 'contain' }) {
+export function CachedImage({ uri, style, resizeMode = 'cover', blurRadius }: { uri: string; style?: StyleProp<ImageStyle>; resizeMode?: 'cover' | 'contain'; blurRadius?: number }) {
   const [src, setSrc] = useState(() => cachedUri(uri) ?? uri);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -25,6 +25,7 @@ export function CachedImage({ uri, style, resizeMode = 'cover' }: { uri: string;
       source={{ uri: src }}
       style={style}
       resizeMode={resizeMode}
+      blurRadius={blurRadius}
       onError={() => {
         const hit = cachedUri(uri);
         if (hit && hit !== src) setSrc(hit);

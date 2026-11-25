@@ -220,8 +220,14 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
       )}
       <label className="check">
         <input type="checkbox" checked={s.rotationEnabled} onChange={(e) => set({ rotationEnabled: e.target.checked })} />
-        Automatically switch wallpaper {s.mode === 'folder' && <span className="muted small">(your system rotates the folder; Wallpepper keeps it filled)</span>}
+        Change the wallpaper automatically {s.mode === 'folder' ? <span className="muted small">(your system rotates the folder; Wallpepper keeps it filled)</span> : <span className="muted small">(off = keep the one you set)</span>}
       </label>
+      {!mobile && s.mode === 'apply' && (
+        <label className="check">
+          <input type="checkbox" checked={s.perDisplay !== false} onChange={(e) => set({ perDisplay: e.target.checked })} />
+          A different wallpaper on each display <span className="muted small">(when this computer has several; not with Span)</span>
+        </label>
+      )}
       {s.rotationEnabled && s.mode === 'apply' && (
         <div className="row">
           <label>Every

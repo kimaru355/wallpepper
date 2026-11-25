@@ -233,34 +233,43 @@ test('compat: orientation, variants, resolving for each device', async () => {
   assert.equal(getVariant(s.state, land.id), undefined);
 });
 
-test('compat: similar images from each kind of source', async () => {
-  const { findAlternatives } = await import('../src/index.ts');
-  const s = await mk('pc', 'linux');
-  const calls: string[] = [];
-  const http = async (url: string) => {
-    calls.push(url);
-    if (url.includes('wallhaven.cc')) return { data: [{ id: 'zz1', path: 'https://w/zz1.jpg', thumbs: { large: 'https://w/t.jpg' }, dimension_x: 1080, dimension_y: 2000, url: 'https://w/zz1' }, { id: 'zz2', path: 'https://w/zz2.jpg', thumbs: {}, dimension_x: 2000, dimension_y: 1000 }], meta: { last_page: 1 } };
-    if (url.includes('konachan')) return [{ id: 9, file_url: 'https://k/9.jpg', sample_url: 'https://k/s9.jpg', width: 1200, height: 2400, tags: 'naruto uzumaki' }];
-    if (url.includes('tvmaze.com/shows/')) return [{ type: 'poster', resolutions: { original: { url: 'https://tv/p.jpg', width: 680, height: 1000 }, medium: { url: 'https://tv/pm.jpg' } } }, { type: 'background', resolutions: { original: { url: 'https://tv/b.jpg', width: 1280, height: 720 } } }];
-    return [];
-  };
-  // Wallhaven image: asks Wallhaven for "like:<id>" in the other orientation, drops wrong-shaped results
-  const wh = { id: 'wallhaven:abc12', sourceId: 'wallhaven', title: 'x', url: 'https://w/a.jpg', thumb: 'https://w/at.jpg', width: 1920, height: 1080 };
-  const a = await findAlternatives(s, http, wh, 'portrait');
-  assert.ok(calls.some((u) => u.includes('like%3Aabc12') && u.includes('portrait')));
-  assert.ok(a.some((x) => x.id === 'wallhaven:zz1') && !a.some((x) => x.id === 'wallhaven:zz2'));
-  // board image: keyword search
+test('compat: Search similar starts from the title words and the likely category', async () => {
+  const { searchSeed } = await import('../src/index.ts');
+  const s = await mk('pc', 'android');
   const kn = { id: 'konachan:5', sourceId: 'konachan', title: 'naruto uzumaki sky', url: 'https://k/5.jpg', thumb: 'https://k/s5.jpg', width: 3000, height: 1700 };
-  const b = await findAlternatives(s, http, kn, 'portrait');
-  assert.ok(b.some((x) => x.id === 'konachan:9'));
-  // TVmaze: the real counterpart
-  const tv = { id: 'tvmaze:77p', sourceId: 'tvmaze', title: 'Show', url: 'https://tv/p.jpg', thumb: 'https://tv/pm.jpg', width: 680, height: 1000 };
-  const t = await findAlternatives(s, http, tv, 'landscape');
-  assert.equal(t[0].url, 'https://tv/b.jpg');
-  // Picsum: same photo at another size
-  const pi = { id: 'picsum:237', sourceId: 'picsum', title: 'Photo', url: 'https://picsum.photos/id/237/3000/2000.jpg', thumb: 'x', width: 3000, height: 2000 };
-  const pp = await findAlternatives(s, http, pi, 'portrait');
-  assert.match(pp[0].url, /\/id\/237\/\d+\/2000\.jpg/);
+  assert.deepEqual(searchSeed(s.state, kn), { query: 'naruto uzumaki sky', category: 'anime' });
+  // a sub-group takes the category of its parent group
+  const games = createGroup(s, 'Games', { category: 'games' });
+  const zelda = createGroup(s, 'Zelda', { parentId: games.id });
+  const wh = { id: 'wallhaven:x1', sourceId: 'wallhaven', title: 'link', url: 'https://w/x.jpg', thumb: 'https://w/t.jpg' };
+  addToGroup(s, wh, zelda.id);
+  assert.equal(searchSeed(s.state, wh).category, 'games');
+});
+
+test('rotation: a different wallpaper on each display, unless turned off', async () => {
+  const { rotateNow, pickNextMany } = await import('../src/index.ts');
+  const s = await mk('pc', 'linux');
+  for (let i = 1; i <= 5; i++) addToGroup(s, { ...wp(i), width: 1920, height: 1080 }, 'all');
+  updateDeviceSettings(s, s.state.local.deviceId, { rotationOrder: 'sequential' });
+  const many: string[][] = [];
+  const single: string[] = [];
+  const platform: PlatformActions = {
+    folderLayout: 'tree',
+    download: async () => '',
+    setWallpaper: async (w) => void single.push(w.id),
+    displays: async () => 3,
+    setWallpapers: async (items) => void many.push(items.map((i) => i.w.id)),
+  };
+  await rotateNow(s, platform);
+  assert.equal(many.length, 1);
+  assert.equal(new Set(many[0]).size, 3, 'three different wallpapers');
+  await rotateNow(s, platform);
+  assert.ok(!many[1].includes(many[0][2]) || many[1][0] !== many[0][2], 'carries on after the last one shown');
+  updateDeviceSettings(s, s.state.local.deviceId, { perDisplay: false });
+  await rotateNow(s, platform);
+  assert.equal(single.length, 1);
+  // more displays than wallpapers: they repeat
+  assert.equal(pickNextMany(s, 7).length, 7);
 });
 
 test('compat: variants travel with shared collections; recommendations come from the server', async () => {

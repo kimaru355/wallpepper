@@ -5,10 +5,8 @@ import {
   compatStatus,
   deviceShape,
   ensureDimensions,
-  findAlternatives,
   getDeviceSettings,
   getVariant,
-  otherShape,
   placeCrop,
   setVariant,
   shapeOf,
@@ -19,7 +17,8 @@ import {
 import { CachedImage } from './CachedImage';
 import { getCtx, toast, useAppState } from './ctx';
 import { useInsets } from './insets';
-import { http, probeImage } from './platform';
+import { probeImage } from './platform';
+import { SearchSimilar } from './SearchSimilar';
 import { Btn, colors, Icon, Sheet, text } from './ui';
 
 // ------------------------------------------------------------------ which wallpaper is being checked
@@ -65,28 +64,15 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
   const state = useAppState();
   const { store } = getCtx();
   const [w, setW] = useState(initial);
-  const [alts, setAlts] = useState<Wallpaper[] | null>(null);
-  const [picked, setPicked] = useState<Wallpaper | null>(null);
   const [cropping, setCropping] = useState(false);
+  const [searching, setSearching] = useState(false);
   const status = compatStatus(state, w);
   const need = status.needs;
 
-  // step 1 again (the wallpaper may have been opened without a size), then step 2: look for similar images
+  // step 1 again: the wallpaper may have been opened without a size
   useEffect(() => {
     let live = true;
-    (async () => {
-      const full = (await ensureDimensions(store, w.id, probeImage)) ?? w;
-      if (!live) return;
-      setW(full);
-      const s = shapeOf(full);
-      if (s === 'unknown' || s === 'square') return setAlts([]);
-      try {
-        const found = await findAlternatives(store, http, full, otherShape(s));
-        if (live) setAlts(found);
-      } catch {
-        if (live) setAlts([]);
-      }
-    })();
+    void ensureDimensions(store, w.id, probeImage).then((full) => live && full && setW(full));
     return () => {
       live = false;
     };
@@ -107,6 +93,20 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
         onSave={(crop) => {
           setVariant(store, w, { kind: 'crop', crop });
           done('Crop saved');
+        }}
+      />
+    );
+  }
+
+  if (searching && need) {
+    return (
+      <SearchSimilar
+        w={w}
+        target={need}
+        onCancel={() => setSearching(false)}
+        onPick={(alt) => {
+          setVariant(store, w, { kind: 'image', wallpaper: alt });
+          done('Saved: phones and computers each get a picture of the right shape');
         }}
       />
     );
@@ -147,39 +147,19 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
             This is a {SHAPE_LABEL[status.shape as Shape]} image, so it will not fit {WHERE[need]} well. Pick how it should look there{need === me ? ' (that is this device)' : ''}.
           </Text>
 
-          <Text style={[text.h2, { marginTop: 14 }]}>Similar {SHAPE_LABEL[need]} images</Text>
-          {alts === null ? (
-            <Text style={text.small}>Looking for matches…</Text>
-          ) : alts.length === 0 ? (
-            <Text style={text.small}>No similar {SHAPE_LABEL[need]} image found. You can crop this one or use a blurred background.</Text>
-          ) : (
-            <View style={s.grid}>
-              {alts.map((a) => (
-                <Pressable key={a.id} onPress={() => setPicked(picked?.id === a.id ? null : a)} style={[s.cell, { aspectRatio: need === 'portrait' ? 9 / 16 : 16 / 9, width: need === 'portrait' ? '31.5%' : '48%' }, picked?.id === a.id && { borderColor: colors.accent, borderWidth: 3 }]}>
-                  <CachedImage uri={a.thumb} style={StyleSheet.absoluteFill as ImageStyle} />
-                  {picked?.id === a.id && (
-                    <View style={s.tick}><Icon name="check" size={14} color="#fff" /></View>
-                  )}
-                </Pressable>
-              ))}
-            </View>
-          )}
-          <Btn
-            title="Use the selected image"
-            kind="primary"
-            icon="check"
-            disabled={!picked}
-            style={{ marginTop: 10 }}
-            onPress={() => {
-              setVariant(store, w, { kind: 'image', wallpaper: picked! });
-              done('Saved');
-            }}
-          />
-
-          <Text style={[text.small, { marginTop: 14, marginBottom: 6 }]}>Or keep this image:</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Btn title="Crop it" icon="expand" onPress={() => setCropping(true)} style={{ flex: 1 }} />
-            <Btn title="Blurred background" icon="image" onPress={() => { setVariant(store, w, { kind: 'blur' }); done('Saved'); }} style={{ flex: 1 }} />
+          <View style={{ gap: 8, marginTop: 14 }}>
+            <Pressable style={s.option} onPress={() => setSearching(true)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Icon name="search" size={18} /><Text style={[text.h2, { marginBottom: 0 }]}>Search similar</Text></View>
+              <Text style={text.small}>Search for a {SHAPE_LABEL[need]} picture of the same thing (e.g. the same character) and use that one there.</Text>
+            </Pressable>
+            <Pressable style={s.option} onPress={() => setCropping(true)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Icon name="expand" size={18} /><Text style={[text.h2, { marginBottom: 0 }]}>Crop it</Text></View>
+              <Text style={text.small}>Use the part of this picture you choose.</Text>
+            </Pressable>
+            <Pressable style={s.option} onPress={() => { setVariant(store, w, { kind: 'blur' }); done('Saved'); }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Icon name="image" size={18} /><Text style={[text.h2, { marginBottom: 0 }]}>Blurred background</Text></View>
+              <Text style={text.small}>Show the whole picture over a blurred copy of itself.</Text>
+            </Pressable>
           </View>
         </>
       ) : null}
@@ -269,7 +249,7 @@ function CropEditor({ w, target, initial, onCancel, onSave }: { w: Wallpaper; ta
 }
 
 const s = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  option: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.panel2, borderRadius: 12, padding: 12, gap: 4 },
   cell: { borderRadius: 8, overflow: 'hidden', backgroundColor: colors.panel2, borderWidth: 3, borderColor: 'transparent' },
   tick: { position: 'absolute', top: 4, right: 4, backgroundColor: colors.accent, borderRadius: 10, padding: 3 },
   dim: { position: 'absolute', backgroundColor: 'rgba(0,0,0,.6)' },

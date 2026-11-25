@@ -54,7 +54,10 @@ export function Tile({ w, width, onOpen, onGroup }: { w: Wallpaper; width: numbe
   return (
     <View style={{ width, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.panel }}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onOpen}>
-        <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} />
+        {/* the whole picture, fitted, over a blurred copy of itself: a landscape image is not cropped to a sliver */}
+        <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} blurRadius={18} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,.25)' }]} />
+        <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
       </Pressable>
       {saved && (
         <View style={t.star}>
@@ -206,8 +209,8 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
         </>
       )}
       <Toggle
-        label="Switch wallpaper automatically"
-        hint={s.mode === 'folder' ? 'Your phone rotates the albums; Wallpepper keeps them filled.' : undefined}
+        label="Change the wallpaper automatically"
+        hint={s.mode === 'folder' ? 'Your phone rotates the albums; Wallpepper keeps them filled.' : 'Off: the wallpaper you set stays until you change it.'}
         value={s.rotationEnabled}
         onChange={(v) => set({ rotationEnabled: v })}
       />

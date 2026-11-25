@@ -12,6 +12,9 @@ const api = {
     ipcRenderer.invoke('wallpaper:download', w, folder, subPath),
   setWallpaperData: (data: ArrayBuffer, name: string, target: string): Promise<{ note?: string }> =>
     ipcRenderer.invoke('wallpaper:setData', data, name, target),
+  setWallpapers: (entries: ({ id: string; url: string } | { data: ArrayBuffer; name: string })[], target: string, fit: string): Promise<{ note?: string }> =>
+    ipcRenderer.invoke('wallpaper:setMany', entries, target, fit),
+  displays: (): Promise<number> => ipcRenderer.invoke('app:displays'),
   saveWallpaperData: (data: ArrayBuffer, folder: string, subPath: string[], name: string): Promise<string> =>
     ipcRenderer.invoke('wallpaper:saveData', data, folder, subPath, name),
   imageCacheSize: (): Promise<number> => ipcRenderer.invoke('cache:size'),

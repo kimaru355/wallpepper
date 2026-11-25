@@ -9,6 +9,7 @@ import {
   SyncManager,
   type BrowseCache,
   type BrowseFilters,
+  type Orientation,
   type State,
   type Store,
   type Wallpaper,
@@ -23,13 +24,13 @@ export interface Ctx {
 }
 
 /** Another browse list (e.g. one recommended collection) that shares the saved-results cache. */
-export function makeBrowse(filters: Partial<BrowseFilters>): BrowseController {
+export function makeBrowse(filters: Partial<BrowseFilters>, orientation: Orientation = 'portrait'): BrowseController {
   const { store } = getCtx();
   const cache: BrowseCache = {
     get: (k) => cacheGet<Wallpaper[]>(store, k)?.data,
     set: (k, v) => cachePut(store, k, v),
   };
-  return new BrowseController(() => getSources(store.state), http, 'portrait', filters, cache);
+  return new BrowseController(() => getSources(store.state), http, orientation, filters, cache);
 }
 
 let ctx: Ctx | null = null;

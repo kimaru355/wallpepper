@@ -18,6 +18,10 @@ export interface PlatformActions {
   download(w: Wallpaper, folderPath: string, subPath: string[], render?: { fit: FitMode; crop?: Crop }): Promise<string>;
   /** Set as system wallpaper. The platform fetches the image itself and applies `fit` (incl. 'blur') and `crop`. */
   setWallpaper(w: Wallpaper, target: WallpaperTarget, fit: FitMode, crop?: Crop): Promise<void>;
+  /** Number of displays (computers). Absent = one. */
+  displays?(): Promise<number>;
+  /** One wallpaper per display, in display order; the first one also goes on the lock screen. */
+  setWallpapers?(items: { w: Wallpaper; fit: FitMode; crop?: Crop }[], target: WallpaperTarget): Promise<void>;
 }
 
 const sameDir = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -99,7 +103,47 @@ export function pickNext(store: Store): LibraryItem | null {
   return list[(idx + 1) % list.length];
 }
 
+/** The next `n` wallpapers of the active group, all different when the group is big enough. */
+export function pickNextMany(store: Store, n: number): LibraryItem[] {
+  const s = getDeviceSettings(store.state);
+  const list = getGroupWallpapers(store.state, s.activeGroupId);
+  if (!list.length || n < 1) return [];
+  const last = store.state.local.rotation.lastWallpaperId;
+  let order: LibraryItem[];
+  if (s.rotationOrder === 'shuffle') {
+    const pool = list.length > n ? list.filter((w) => w.id !== last) : list.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    order = pool;
+  } else {
+    const idx = list.findIndex((w) => w.id === last);
+    order = list.map((_, k) => list[(idx + 1 + k) % list.length]);
+  }
+  // fewer wallpapers than displays: repeat them
+  return Array.from({ length: n }, (_, k) => order[k % order.length]);
+}
+
 export async function rotateNow(store: Store, platform: PlatformActions): Promise<LibraryItem | null> {
+  const s = getDeviceSettings(store.state);
+  // Several displays: a different wallpaper on each one.
+  if (s.mode !== 'folder' && s.perDisplay !== false && s.fit !== 'span' && platform.displays && platform.setWallpapers) {
+    const n = await platform.displays().catch(() => 1);
+    if (n > 1) {
+      const picks = pickNextMany(store, n);
+      if (!picks.length) return null;
+      await platform.setWallpapers(
+        picks.map((w) => {
+          const r = resolveForThisDevice(store.state, w);
+          return { w: r.wallpaper, fit: r.fit, crop: r.crop };
+        }),
+        s.target,
+      );
+      store.setLocal({ rotation: { lastWallpaperId: picks[picks.length - 1].id, lastAt: Date.now() } });
+      return picks[0];
+    }
+  }
   const next = pickNext(store);
   if (!next) return null;
   await applyWallpaper(store, platform, next);

@@ -1,7 +1,6 @@
-import { getSources, getDeviceSettings } from './selectors.ts';
-import { fetchPage } from './sources/index.ts';
+import { getDeviceSettings, getGroups, getSources, getWallpaperGroupIds } from './selectors.ts';
 import { recordKey, type Store } from './store.ts';
-import type { FitMode, Http, SourceConfig, State, Wallpaper } from './types.ts';
+import type { CategoryId, FitMode, State, Wallpaper } from './types.ts';
 
 /**
  * Phones are portrait and PCs are landscape, so one image rarely suits both. Every saved wallpaper can carry a
@@ -142,7 +141,7 @@ export async function ensureDimensions(store: Store, wallpaperId: string, probe:
   }
 }
 
-// ---------------------------------------------------------------- step 2: similar images
+// ---------------------------------------------------------------- step 2: searching for the other orientation
 
 const STOP = new Set(['rating', 'safe', 'wallpaper', 'the', 'and', 'of', 'a', 'in', 'on']);
 
@@ -156,80 +155,24 @@ export function keywordsOf(w: Wallpaper): string {
     .join(' ');
 }
 
-const itemIdOf = (w: Wallpaper) => w.id.slice(w.sourceId.length + 1);
-
-/** Picsum can serve any size of the same photo, so that source gives a true second version. */
-function picsumVariant(src: SourceConfig, w: Wallpaper, target: Shape): Wallpaper | null {
-  const id = itemIdOf(w);
-  if (!/^\d+$/.test(id) || !w.width || !w.height) return null;
-  let width: number;
-  let height: number;
-  if (target === 'portrait') {
-    height = Math.min(w.height, 2340);
-    width = Math.round((height * 9) / 19.5);
-  } else {
-    width = Math.min(w.width, 3840);
-    height = Math.round((width * 9) / 16);
-  }
-  return {
-    id: `${src.id}:${id}:${target[0]}`, sourceId: src.id, title: w.title, author: w.author, pageUrl: w.pageUrl, width, height,
-    url: `https://picsum.photos/id/${id}/${width}/${height}.jpg`,
-    thumb: `https://picsum.photos/id/${id}/${target === 'portrait' ? '300/650' : '640/360'}.jpg`,
-  };
-}
-
-/** TVmaze has both a poster (portrait) and a background (landscape) for every show. */
-async function tvmazeVariant(src: SourceConfig, w: Wallpaper, target: Shape, http: Http): Promise<Wallpaper | null> {
-  const showId = itemIdOf(w).replace(/[pb]$/, '');
-  const imgs: any[] = await http(`https://api.tvmaze.com/shows/${showId}/images`);
-  const pick = imgs.find((i) => i.type === (target === 'portrait' ? 'poster' : 'background'));
-  const r = pick?.resolutions?.original;
-  if (!r?.url) return null;
-  return { id: `${src.id}:${showId}${target === 'portrait' ? 'p' : 'b'}`, sourceId: src.id, title: w.title, url: r.url, thumb: pick.resolutions.medium?.url ?? r.url, width: r.width, height: r.height, pageUrl: w.pageUrl };
-}
-
 /**
- * Images that show the same thing in the other orientation, best first. Sources that can produce a real
- * counterpart (Picsum, TVmaze) do; Wallhaven is asked for "similar" wallpapers; every other source is searched by keywords.
+ * Where "Search similar" starts: words from the wallpaper's title / tags and the category it most likely belongs to
+ * (its group's category, else what its source serves). The user then searches freely in the other orientation.
  */
-export async function findAlternatives(store: Store, http: Http, w: Wallpaper, target: Shape): Promise<Wallpaper[]> {
-  const sources = getSources(store.state).filter((s) => s.enabled);
-  const own = sources.find((s) => s.id === w.sourceId) ?? getSources(store.state).find((s) => s.id === w.sourceId);
-  const exact: Wallpaper[] = [];
-  try {
-    if (own?.type === 'picsum') {
-      const v = picsumVariant(own, w, target);
-      if (v) exact.push(v);
-    } else if (own?.type === 'tvmaze') {
-      const v = await tvmazeVariant(own, w, target, http);
-      if (v) exact.push(v);
-    }
-  } catch {
-    /* fall through to searching */
-  }
-  const words = keywordsOf(w);
-  const searches = sources
-    .filter((s) => s.type !== 'tvmaze' && s.type !== 'picsum' && s.type !== 'github')
-    .map(async (s) => {
-      const query = s.type === 'wallhaven' && own?.type === 'wallhaven' ? `like:${itemIdOf(w)}` : words;
-      if (!query) return [] as Wallpaper[];
-      const page = await fetchPage(s, { category: 'all', query, page: 1, sort: 'popular', orientation: target }, http);
-      return page.items;
-    });
-  const lists = (await Promise.allSettled(searches)).map((r) => (r.status === 'fulfilled' ? r.value : []));
-  const out: Wallpaper[] = [...exact];
-  const seen = new Set([w.id, ...exact.map((x) => x.id)]);
-  for (let i = 0; out.length < 18 && lists.some((l) => i < l.length); i++) {
-    for (const l of lists) {
-      const c = l[i];
-      if (!c || seen.has(c.id)) continue;
-      const s = shapeOf(c);
-      if (s !== target && s !== 'square') continue; // unknown sizes are skipped: we cannot promise they match
-      seen.add(c.id);
-      out.push(c);
-    }
-  }
-  return out;
+export function searchSeed(state: State, w: Wallpaper): { query: string; category: CategoryId } {
+  const groups = getGroups(state);
+  const fromGroup = getWallpaperGroupIds(state, w.id)
+    .map((id) => groups.find((g) => g.id === id))
+    .map((g) => {
+      // a sub-group inherits the category of the group it sits in
+      let cur = g;
+      for (let n = 0; cur && !cur.category && cur.parentId && n < 10; n++) cur = groups.find((x) => x.id === cur!.parentId);
+      return cur?.category;
+    })
+    .find(Boolean);
+  const src = getSources(state).find((s) => s.id === w.sourceId);
+  const category = fromGroup ?? src?.categories[0] ?? 'anime';
+  return { query: keywordsOf(w), category };
 }
 
 // ---------------------------------------------------------------- crop maths
