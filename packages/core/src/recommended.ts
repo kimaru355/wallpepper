@@ -23,7 +23,7 @@ export interface RecommendationsDoc {
 }
 
 /**
- * The list is curated on the server (wallpepper.pcstack.top/recommendations). It is cached, so Home still shows
+ * The list is curated on the server (wallpepper-backend.pcstack.top/recommendations). It is cached, so Home still shows
  * the last list offline; `offline` tells the UI when that happened.
  */
 export async function loadRecommendations(

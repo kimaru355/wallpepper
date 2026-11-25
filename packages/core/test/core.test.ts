@@ -288,3 +288,16 @@ test('compat: variants travel with shared collections; recommendations come from
   const fresh = await mk('c', 'linux');
   await assert.rejects(loadRecommendations(fresh, undefined, down));
 });
+
+test('signed-in installs move to the new backend domain', async () => {
+  let saved: string | null = null;
+  const adapter = { load: async () => saved, save: async (j: string) => void (saved = j) };
+  const a = new Store(adapter, { deviceName: 'pc', platform: 'linux', folderPath: '/tmp' });
+  await a.init();
+  a.setLocal({ auth: { serverUrl: 'https://wallpepper.pcstack.top/', token: 't', email: 'e@x.io' } });
+  await a.flush();
+  const b = new Store(adapter, { deviceName: 'pc', platform: 'linux', folderPath: '/tmp' });
+  await b.init();
+  assert.equal(b.state.local.auth!.serverUrl, 'https://wallpepper-backend.pcstack.top');
+  assert.equal(b.state.local.auth!.token, 't');
+});

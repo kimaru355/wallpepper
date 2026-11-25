@@ -171,4 +171,6 @@ export interface State {
 export const ALL_GROUP_ID = 'all';
 
 /** Hosted sync backend used by default (users can point the apps at their own server). */
-export const DEFAULT_SERVER_URL = 'https://wallpepper.pcstack.top';
+export const DEFAULT_SERVER_URL = 'https://wallpepper-backend.pcstack.top';
+/** The backend used to share the download site's domain (versions before 0.2). */
+export const LEGACY_SERVER_URL = 'https://wallpepper.pcstack.top';

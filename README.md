@@ -41,7 +41,7 @@ npm 11 blocks dependency install scripts by default. If Electron complains it "f
 
 **1. Sync backend**
 
-Both apps use the hosted backend **https://wallpepper.pcstack.top** by default (Express + PostgreSQL, repo `wallpepper-backend`, deployed on the VPS) — nothing to run. The apps no longer show a server field; to use another deployment change `DEFAULT_SERVER_URL` in `packages/core/src/types.ts`.
+Both apps use the hosted backend **https://wallpepper-backend.pcstack.top** by default (Express + PostgreSQL, repo `wallpepper-backend`, deployed on the VPS) — nothing to run. The apps no longer show a server field; to use another deployment change `DEFAULT_SERVER_URL` in `packages/core/src/types.ts`.
 
 **2. Desktop**
 
@@ -77,7 +77,7 @@ Android blocks plain `http://` servers, so a self-hosted backend needs HTTPS.
 
 ## Releasing (download site)
 
-The site at **https://wallpepper.pcstack.top** (`site/`) lists the latest build of each app; the API lives on the same domain (`/auth /sync /devices /me /health` → backend, everything else → site).
+The site at **https://wallpepper.pcstack.top** (`site/`) lists the latest build of each app; the API lives on its own domain, https://wallpepper-backend.pcstack.top (the old host keeps routing the API paths for installs before 0.2).
 
 ```powershell
 # 1. build

@@ -1,4 +1,4 @@
-import type { DeviceSettings, LocalState, RecordKind, State, SyncRecord } from './types.ts';
+import { DEFAULT_SERVER_URL, LEGACY_SERVER_URL, type DeviceSettings, type LocalState, type RecordKind, type State, type SyncRecord } from './types.ts';
 
 export interface StorageAdapter {
   load(): Promise<string | null>;
@@ -81,6 +81,9 @@ export class Store {
     } catch {
       /* corrupt file: start fresh */
     }
+    // The backend moved from the download site's domain to its own: signed-in installs follow it (the token stays valid).
+    const auth = this.state.local.auth;
+    if (auth && auth.serverUrl.replace(/\/+$/, '') === LEGACY_SERVER_URL) this.state.local.auth = { ...auth, serverUrl: DEFAULT_SERVER_URL };
     const key = recordKey('deviceSettings', this.state.local.deviceId);
     const mine = this.state.records[key];
     if (mine && !mine.deleted && !(mine.data as DeviceSettings).fit) {
