@@ -3,13 +3,13 @@ import { fetchGeneric } from './generic.ts';
 import { fetchGithub } from './github.ts';
 import { fetchMoebooru } from './moebooru.ts';
 import { fetchPicsum } from './picsum.ts';
-import { fetchTmdb } from './tmdb.ts';
+import { fetchTvmaze } from './tvmaze.ts';
 import { fetchWallhaven } from './wallhaven.ts';
 
 /**
- * The six built-in sources. They can be disabled but never removed.
+ * The six built-in sources (none needs an account or API key). They can be disabled but never removed.
  *  anime  : Konachan, Yande.re
- *  movies : TMDB (needs free key), Wallhaven (also covers tech/nature/space/games...)
+ *  movies : TVmaze (series posters/backgrounds), Wallhaven (also tech/nature/space/games...)
  *  linux  : GitHub wallpaper repo
  *  other  : Picsum photography
  */
@@ -25,9 +25,9 @@ export const BUILTIN_SOURCES: SourceConfig[] = [
     description: 'Anime wallpapers, safe rating only.',
   },
   {
-    id: 'tmdb', name: 'TMDB', type: 'tmdb', builtin: true, enabled: true,
+    id: 'tvmaze', name: 'TVmaze', type: 'tvmaze', builtin: true, enabled: true,
     categories: ['movies'], options: {},
-    description: 'Trending movie & series backdrops. Needs a free API key from themoviedb.org.',
+    description: 'TV series posters and backdrops. No account or key needed.',
   },
   {
     id: 'wallhaven', name: 'Wallhaven', type: 'wallhaven', builtin: true, enabled: true,
@@ -48,10 +48,6 @@ export const BUILTIN_SOURCES: SourceConfig[] = [
   },
 ];
 
-export function sourceNeedsKey(s: SourceConfig): boolean {
-  return s.type === 'tmdb';
-}
-
 export function sourceSupports(s: SourceConfig, category: string): boolean {
   return category === 'all' || s.categories.length === 0 || s.categories.includes(category);
 }
@@ -60,7 +56,7 @@ export async function fetchPage(src: SourceConfig, params: BrowseParams, http: H
   switch (src.type) {
     case 'moebooru': return fetchMoebooru(src, params, http);
     case 'wallhaven': return fetchWallhaven(src, params, http);
-    case 'tmdb': return fetchTmdb(src, params, http);
+    case 'tvmaze': return fetchTvmaze(src, params, http);
     case 'github': return fetchGithub(src, params, http);
     case 'picsum': return fetchPicsum(src, params, http);
     case 'generic': return fetchGeneric(src, params, http);
@@ -76,7 +72,7 @@ export const SOURCE_TYPE_HELP: Record<string, { label: string; fields: SourceFie
     { key: 'baseUrl', label: 'Base URL', placeholder: 'https://konachan.net', required: true },
     { key: 'extraTags', label: 'Extra tags', placeholder: 'wallpaper' } ] },
   wallhaven: { label: 'Wallhaven', fields: [{ key: 'apiKey', label: 'API key (optional)', secret: true }] },
-  tmdb: { label: 'TMDB', fields: [{ key: 'apiKey', label: 'API key / read token', required: true, secret: true }] },
+  tvmaze: { label: 'TVmaze', fields: [] },
   github: { label: 'GitHub image repo', fields: [
     { key: 'repo', label: 'Repository', placeholder: 'owner/name', required: true },
     { key: 'branch', label: 'Branch', placeholder: 'main' },

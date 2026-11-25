@@ -1,6 +1,6 @@
 /** In-memory stand-in for the sync backend (same contract as wallpepper-backend), used as SyncManager's fetchImpl. */
 export function createFakeServer(): typeof fetch {
-  const users = new Map<string, { password: string; rev: number; records: Map<string, any>; devices: Map<string, any> }>();
+  const users = new Map<string, { username?: string; password: string; rev: number; records: Map<string, any>; devices: Map<string, any> }>();
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
   return (async (input: any, init?: any) => {
@@ -14,12 +14,12 @@ export function createFakeServer(): typeof fetch {
       const existing = users.get(body.email);
       if (url.pathname === '/auth/register') {
         if (existing) return json(409, { error: 'An account with this email already exists.' });
-        users.set(body.email, { password: body.password, rev: 0, records: new Map(), devices: new Map() });
+        users.set(body.email, { username: body.username, password: body.password, rev: 0, records: new Map(), devices: new Map() });
       } else if (!existing || existing.password !== body.password) {
         return json(401, { error: 'Wrong email or password.' });
       }
       users.get(body.email)!.devices.set(body.deviceId, { id: body.deviceId, name: body.deviceName, platform: body.platform, lastSeen: Date.now() });
-      return json(200, { token: `tok-${body.email}`, email: body.email });
+      return json(200, { token: `tok-${body.email}`, email: body.email, username: users.get(body.email)!.username });
     }
     if (!user) return json(401, { error: 'Not signed in' });
     if (url.pathname === '/devices' && method === 'GET') return json(200, { devices: [...user.devices.values()] });

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -11,14 +12,34 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { ICON_PATHS, type IconName } from '@wallpepper/core';
+import { useInsets } from './insets';
 
 export const colors = {
   bg: '#0e0f13', panel: '#171922', panel2: '#1f222d', line: '#2a2e3b', text: '#e8eaf0', muted: '#8b90a0',
   accent: '#7c5cff', accent2: '#ff5c8a', danger: '#ff5c6c', ok: '#3ecf8e', warn: '#f5b74e',
 };
 
-export function Btn({ title, onPress, kind, disabled, style }: {
-  title: string; onPress: () => void; kind?: 'primary' | 'danger'; disabled?: boolean; style?: ViewStyle;
+export function Icon({ name, size = 20, color = colors.text, strokeWidth = 2 }: { name: IconName; size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {ICON_PATHS[name].map((d, i) => <Path key={i} d={d} />)}
+    </Svg>
+  );
+}
+
+/** Round icon button (e.g. on image tiles). */
+export function IconBtn({ name, onPress, size = 18, style, color, label }: { name: IconName; onPress: () => void; size?: number; style?: ViewStyle; color?: string; label?: string }) {
+  return (
+    <Pressable onPress={onPress} accessibilityLabel={label ?? name} hitSlop={6} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.7 }, style]}>
+      <Icon name={name} size={size} color={color ?? '#fff'} />
+    </Pressable>
+  );
+}
+
+export function Btn({ title, onPress, kind, disabled, style, icon }: {
+  title: string; onPress: () => void; kind?: 'primary' | 'danger'; disabled?: boolean; style?: ViewStyle; icon?: IconName;
 }) {
   return (
     <Pressable
@@ -32,14 +53,16 @@ export function Btn({ title, onPress, kind, disabled, style }: {
         style,
       ]}
     >
+      {icon ? <Icon name={icon} size={16} color={kind === 'danger' ? colors.danger : colors.text} /> : null}
       <Text style={[s.btnText, kind === 'danger' && { color: colors.danger }]}>{title}</Text>
     </Pressable>
   );
 }
 
-export function Chip({ label, on, onPress, bold }: { label: string; on?: boolean; onPress: () => void; bold?: boolean }) {
+export function Chip({ label, on, onPress, bold, icon }: { label: string; on?: boolean; onPress: () => void; bold?: boolean; icon?: IconName }) {
   return (
-    <Pressable onPress={onPress} style={[s.chip, on && { backgroundColor: colors.accent, borderColor: colors.accent }]}>
+    <Pressable onPress={onPress} style={[s.chip, on && { backgroundColor: colors.accent, borderColor: colors.accent }, icon ? { flexDirection: 'row', alignItems: 'center', gap: 6 } : null]}>
+      {icon ? <Icon name={icon} size={14} color={on ? '#fff' : colors.text} /> : null}
       <Text style={{ color: on ? '#fff' : colors.text, fontWeight: bold ? '700' : '400' }}>{label}</Text>
     </Pressable>
   );
@@ -76,12 +99,28 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   );
 }
 
-/** Bottom sheet style modal. */
+/** Height of the on screen keyboard (0 when hidden). */
+export function useKeyboardHeight(): number {
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setH(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setH(0));
+    return () => (show.remove(), hide.remove());
+  }, []);
+  return h;
+}
+
+/**
+ * Bottom sheet. It stays inside the space the device leaves for apps: above the navigation bar / gesture area, below the
+ * status bar, and lifted above the keyboard.
+ */
 export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children: ReactNode }) {
+  const insets = useInsets();
+  const kb = useKeyboardHeight();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={s.sheet}>
+      <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, kb) + 14, maxHeight: "85%", marginTop: insets.top }]}>
         {title ? <Text style={s.sheetTitle}>{title}</Text> : null}
         <ScrollView keyboardShouldPersistTaps="handled">{children}</ScrollView>
       </View>
@@ -95,13 +134,15 @@ export function Select({ label, value, options, onChange }: { label: string; val
   return (
     <View style={{ marginBottom: 10 }}>
       <Text style={s.label}>{label}</Text>
-      <Pressable style={s.input} onPress={() => setOpen(true)}>
-        <Text style={{ color: colors.text }}>{options.find((o) => o.value === value)?.label ?? value} ▾</Text>
+      <Pressable style={[s.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} onPress={() => setOpen(true)}>
+        <Text style={{ color: colors.text }}>{options.find((o) => o.value === value)?.label ?? value}</Text>
+        <Icon name="chevronDown" size={16} color={colors.muted} />
       </Pressable>
       <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
         {options.map((o) => (
-          <Pressable key={o.value} style={s.option} onPress={() => { onChange(o.value); setOpen(false); }}>
-            <Text style={{ color: o.value === value ? colors.accent : colors.text, fontSize: 16 }}>{o.value === value ? '✓ ' : ''}{o.label}</Text>
+          <Pressable key={o.value} style={[s.option, { flexDirection: 'row', alignItems: 'center' }]} onPress={() => { onChange(o.value); setOpen(false); }}>
+            <Text style={{ color: o.value === value ? colors.accent : colors.text, fontSize: 16, flex: 1 }}>{o.label}</Text>
+            {o.value === value ? <Icon name="check" size={18} color={colors.accent} /> : null}
           </Pressable>
         ))}
       </Sheet>
@@ -122,7 +163,8 @@ export const text = StyleSheet.create({
 });
 
 const s = StyleSheet.create({
-  btn: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.panel2, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, alignItems: 'center' },
+  btn: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.panel2, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  iconBtn: { backgroundColor: 'rgba(14,15,19,.78)', borderRadius: 18, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   btnText: { color: colors.text, fontWeight: '600' },
   chip: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.panel, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999 },
   label: { color: colors.muted, fontSize: 12, marginBottom: 4 },
@@ -130,7 +172,7 @@ const s = StyleSheet.create({
   input: { backgroundColor: colors.panel2, borderWidth: 1, borderColor: colors.line, borderRadius: 10, color: colors.text, paddingHorizontal: 12, paddingVertical: 10 },
   toggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.6)' },
-  sheet: { backgroundColor: colors.panel, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, maxHeight: '85%', borderColor: colors.line, borderWidth: 1 },
+  sheet: { backgroundColor: colors.panel, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, borderColor: colors.line, borderWidth: 1 },
   sheetTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 12 },
   option: { paddingVertical: 13, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
   card: { backgroundColor: colors.panel, borderColor: colors.line, borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12 },

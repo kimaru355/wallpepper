@@ -13,12 +13,18 @@ apps/mobile     React Native (Expo, dev-client) + a small Kotlin module that set
 | Request | How it works |
 |---|---|
 | Main categories anime / movies & series / linux, plus others (tech, nature, space, games, abstract, minimal) | Category chips in Browse. Sources declare which categories they serve; results from all matching sources are interleaved. |
-| 6 built-in sources | **Konachan** and **Yande.re** (anime, safe-rated only) · **TMDB** (movies/series, needs a free key) and **Wallhaven** (movies/series + tech/nature/space/games/…) · **Linux Walls** (GitHub repo `dharmx/walls`) · **Picsum** (photography). |
-| Add your own sources | Sources → Add. Types: Moebooru board, Wallhaven, TMDB, any **GitHub image repo**, or a **custom JSON API** (URL template + paths to the image/thumb/id fields). Built-ins can be switched off but never removed. |
+| 6 built-in sources | **Konachan** and **Yande.re** (anime, safe-rated only) · **TVmaze** (series posters & backdrops, no key) and **Wallhaven** (movies/series + tech/nature/space/games/…) · **Linux Walls** (GitHub repo `dharmx/walls`) · **Picsum** (photography). |
+| Add your own sources | Sources → Add. Types: Moebooru board, Wallhaven, any **GitHub image repo**, or a **custom JSON API** (URL template + paths to the image/thumb/id fields). Built-ins can be switched off but never removed. |
 | Set home/desktop **and** lock screen | Preview → Home / Lock / Both (Android), Desktop / Lock screen (Windows, Linux). |
 | Optional "folder mode" | Per device: instead of setting the wallpaper, the app only downloads into a folder the OS reads (Windows slideshow folder, GNOME/KDE, Android gallery album). In folder mode the app also keeps that folder filled with the active group. |
 | Accounts, devices, sync | Hosted backend (Express + PostgreSQL). The account stores image links (not files), groups and custom sources. Everything saved before signing in is uploaded on first login. |
-| Groups / playlists / themes | Default **All** group (downloading or saving adds to it). Create your own groups, add from Browse (＋), switch a device's active group, automatic rotation (interval, shuffle/in-order). |
+| Groups, sub-groups, playlists | Default **All** group (downloading or saving adds to it). Create groups and **sub-groups** (All › Anime › Naruto). A group includes its sub-groups, so "Anime" shows every anime wallpaper and "Naruto" only Naruto; set either as a device's active group. Automatic rotation (interval, shuffle/in-order). |
+| First run | 4 steps: 3 info slides → account (email, **username**, password; required) → who changes the wallpaper (**Wallpepper** recommended, or the OS) → fit (fill / fit / stretch / center, plus tile / span on desktop). |
+| Home | **Recommended**: author picks by title (Naruto, Demon Slayer, Marvel…) with covers, loaded from the server; open one and *Save as group* to get Anime › Naruto. **Community**: collections other users shared, with search (name, group, sub-group, creator), category chips and filters (creator, sort, size, has sub-groups). |
+| Phone vs PC images | Phones are portrait, PCs landscape. When you add a wallpaper to a group the app measures it and, if it is not square, asks how it should look in the **other** orientation: pick a similar image (Wallhaven *like*, keyword search on the boards, TVmaze poster/background pair, Picsum resized), **crop it yourself**, or use a **blurred background**. The choice is a synced record, so each device uses what suits its screen; *Check compatibility* in the viewer shows the status and lets you change it. Unset mismatches use the blurred background. Choices also travel with shared community collections. |
+| Recommendations | Home › Recommended is served by the backend (`/recommendations`) and curated on its admin page (`/admin`: edit, discover, import JSON, export). |
+| Offline / caching | Browse pages, Home covers and community lists are remembered and shown instantly (then refreshed); thumbnails are cached on disk (desktop 500 MB, phone 300 MB). |
+| Folder mode layout | Desktop: real folders `Wallpepper/Anime/Naruto/`. Android: one album per group (`Wallpepper`, `Wallpepper - Anime`, `Wallpepper - Anime - Naruto`) because albums cannot be nested. Point the OS slideshow at the folder/album you want. |
 | Per-device sync settings | Account & Devices lists every device with its own settings: active group, mode, target, rotation, sync on/off. You can edit **any** device from any device (e.g. phone → `anime`, PC → `All`); the change arrives on its next sync. |
 
 Extras: tray icon with "Next wallpaper", launch at login, background rotation on Android (WorkManager via `expo-background-task`), infinite-scroll browsing, portrait wallpapers on phones / landscape on PCs, API keys kept local (never synced).
@@ -35,7 +41,7 @@ npm 11 blocks dependency install scripts by default. If Electron complains it "f
 
 **1. Sync backend**
 
-Both apps use the hosted backend **https://wallpepper.pcstack.top** by default (Express + PostgreSQL, repo `wallpepper-backend`, deployed on the VPS) — nothing to run. The "Sync server" field on the sign-in screen can point at any other deployment of that backend.
+Both apps use the hosted backend **https://wallpepper.pcstack.top** by default (Express + PostgreSQL, repo `wallpepper-backend`, deployed on the VPS) — nothing to run. The apps no longer show a server field; to use another deployment change `DEFAULT_SERVER_URL` in `packages/core/src/types.ts`.
 
 **2. Desktop**
 
@@ -66,9 +72,8 @@ The signing config is added by `plugins/withReleaseSigning.js`, so it is re-appl
 
 Desktop installers are not code-signed (that needs a purchased Windows certificate / Apple Developer ID); Windows SmartScreen and macOS Gatekeeper will warn on first run.
 
-Sign in from the phone (the sync server defaults to the hosted backend; Android blocks plain `http://` servers, so a self-hosted one needs HTTPS).
+Android blocks plain `http://` servers, so a self-hosted backend needs HTTPS.
 
-**TMDB key**: create a free account at themoviedb.org → Settings → API → paste the key in Sources → TMDB → Options.
 
 ## Releasing (download site)
 

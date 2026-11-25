@@ -24,6 +24,18 @@ export type Sort = 'latest' | 'popular' | 'random';
 export type WallpaperTarget = 'home' | 'lock' | 'both';
 export type ApplyMode = 'apply' | 'folder';
 export type RotationOrder = 'sequential' | 'shuffle';
+/** How an image is fitted to the screen. */
+export type FitMode = 'fill' | 'fit' | 'blur' | 'stretch' | 'center' | 'tile' | 'span';
+
+export const FIT_MODES: { id: FitMode; label: string; hint: string; desktopOnly?: boolean }[] = [
+  { id: 'fill', label: 'Fill', hint: 'Cover the whole screen, cropping the edges (recommended).' },
+  { id: 'fit', label: 'Fit', hint: 'Show the whole image, with bars if the shape differs.' },
+  { id: 'blur', label: 'Fit + blur', hint: 'Show the whole image over a blurred copy of itself, so no bars and no cropping.' },
+  { id: 'stretch', label: 'Stretch', hint: 'Stretch to the screen size (may distort).' },
+  { id: 'center', label: 'Center', hint: 'Original size in the middle of the screen.' },
+  { id: 'tile', label: 'Tile', hint: 'Repeat the image.', desktopOnly: true },
+  { id: 'span', label: 'Span', hint: 'Spread over all monitors.', desktopOnly: true },
+];
 
 export interface Wallpaper {
   /** Stable id: `${sourceId}:${itemId}` */
@@ -39,7 +51,7 @@ export interface Wallpaper {
   author?: string;
 }
 
-export type SourceType = 'moebooru' | 'wallhaven' | 'tmdb' | 'github' | 'picsum' | 'generic';
+export type SourceType = 'moebooru' | 'wallhaven' | 'tvmaze' | 'github' | 'picsum' | 'generic';
 
 export interface SourceConfig {
   id: string;
@@ -60,6 +72,8 @@ export interface BrowseParams {
   page: number;
   sort: Sort;
   orientation: Orientation;
+  /** Exact tag (underscored) for tag boards; used instead of `query` words when set. */
+  tag?: string;
 }
 
 export interface Page {
@@ -72,7 +86,7 @@ export type Http = (url: string, init?: { headers?: Record<string, string> }) =>
 
 // ---------- sync records ----------
 
-export type RecordKind = 'wallpaper' | 'group' | 'membership' | 'source' | 'deviceSettings';
+export type RecordKind = 'wallpaper' | 'group' | 'membership' | 'source' | 'deviceSettings' | 'variant';
 
 export interface SyncRecord<T = any> {
   kind: RecordKind;
@@ -87,6 +101,10 @@ export interface SyncRecord<T = any> {
 export interface Group {
   id: string;
   name: string;
+  /** Sub-group of this group (e.g. "Naruto" under "Anime"). Absent = top level. */
+  parentId?: string;
+  /** Category used when the group is shared with the community. */
+  category?: CategoryId;
 }
 
 export interface Membership {
@@ -107,6 +125,8 @@ export interface DeviceSettings {
   mode: ApplyMode;
   /** Whether this device pulls changes from the account. */
   syncEnabled: boolean;
+  /** How wallpapers are fitted to the screen. */
+  fit: FitMode;
 }
 
 export interface Device {
@@ -120,6 +140,7 @@ export interface AuthState {
   serverUrl: string;
   token: string;
   email: string;
+  username?: string;
 }
 
 export interface LocalState {
@@ -134,6 +155,12 @@ export interface LocalState {
   secrets: Record<string, Record<string, string>>;
   rotation: { lastWallpaperId: string | null; lastAt: number };
   lastSyncAt: number;
+  /** False until the first-run onboarding was completed. */
+  onboarded: boolean;
+  /** Small response cache (browse pages, community lists) so screens show data before / without the network. */
+  cache: Record<string, { at: number; data: any }>;
+  /** wallpaperId -> sub folders (relative to `folderPath`) it was written to in folder mode. */
+  downloadDirs: Record<string, string[]>;
 }
 
 export interface State {

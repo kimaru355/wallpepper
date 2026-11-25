@@ -1,43 +1,18 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SERVER_URL, getAllDevices, type Device } from '@wallpepper/core';
+import { getAllDevices, type Device } from '@wallpepper/core';
+import { AuthForm } from '../AuthForm';
 import { getCtx } from '../ctx';
-import { DeviceSettingsForm } from '../components';
+import { DeviceSettingsForm, Icon } from '../components';
 import { useAppState, useSyncStatus } from '../hooks';
 import { toast } from '../toast';
 
-const ICON: Record<string, string> = { android: '📱', ios: '📱', windows: '🖥️', mac: '💻', linux: '🐧' };
+const ICON: Record<string, 'devices' | 'monitor'> = { android: 'devices', ios: 'devices' };
 
 function SignIn() {
-  const { sync, store } = getCtx();
-  const [server, setServer] = useState(store.state.local.auth?.serverUrl ?? DEFAULT_SERVER_URL);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const go = async (mode: 'login' | 'register') => {
-    setBusy(true);
-    try {
-      await sync.authenticate(mode, server, email, password);
-      toast(mode === 'register' ? 'Account created.' : 'Signed in and synced.', 'ok');
-    } catch (e: any) {
-      toast(e.message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <div className="source">
-      <p className="muted">
-        An account saves your wallpaper links and groups and syncs them to your other devices. Everything you saved before signing in is uploaded too.
-      </p>
-      <div className="form">
-        <label>Sync server <input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://sync.example.com" /></label>
-        <label>Email <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-        <label>Password <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && go('login')} /></label>
-      </div>
-      <div className="row end" style={{ marginTop: 12 }}>
-        <button disabled={busy} onClick={() => go('register')}>Create account</button>
-        <button className="primary" disabled={busy} onClick={() => go('login')}>Sign in</button>
-      </div>
+      <p className="muted">An account saves your wallpaper links and groups and syncs them to your other devices. Everything you saved before signing in is uploaded too.</p>
+      <AuthForm initial="login" />
     </div>
   );
 }
@@ -51,7 +26,10 @@ export function Account() {
   const auth = state.local.auth;
 
   useEffect(() => {
-    if (auth) sync.listDevices().then(setServer).catch(() => {});
+    if (auth) {
+      sync.listDevices().then(setServer).catch(() => {});
+      if (!auth.username) sync.refreshProfile().catch(() => {});
+    }
   }, [auth, sync, state.local.lastSyncAt]);
 
   const devices = getAllDevices(state);
@@ -64,16 +42,16 @@ export function Account() {
         <div className="source">
           <div className="row between wrap">
             <div>
-              <strong>{auth.email}</strong>
-              <div className="muted small">{auth.serverUrl}</div>
+              <strong>{auth.username ? `@${auth.username}` : auth.email}</strong>
+              <div className="muted small">{auth.username ? auth.email : 'No username yet: you can set one when you share a group.'}</div>
               <div className="muted small">
                 {status.syncing ? 'Syncing…' : state.local.lastSyncAt ? `Last synced ${new Date(state.local.lastSyncAt).toLocaleTimeString()}` : 'Not synced yet'}
               </div>
               {status.error && <div className="warn small">{status.error}</div>}
             </div>
             <div className="row">
-              <button onClick={() => sync.sync().then(() => toast('Synced.', 'ok')).catch((e) => toast(e.message, 'error'))}>Sync now</button>
-              <button className="danger" onClick={() => confirm('Sign out? Your wallpapers stay on this device.') && sync.logout()}>Sign out</button>
+              <button className="ibtn" onClick={() => sync.sync().then(() => toast('Synced.', 'ok')).catch((e) => toast(e.message, 'error'))}><Icon name="refresh" size={16} />Sync now</button>
+              <button className="danger ibtn" onClick={() => confirm('Sign out? Your wallpapers stay on this device.') && sync.logout()}><Icon name="logOut" size={16} />Sign out</button>
             </div>
           </div>
         </div>
@@ -89,7 +67,7 @@ export function Account() {
           <div className="source" key={d.id}>
             <div className="row between">
               <div>
-                <strong>{ICON[d.settings.platform] ?? '📟'} {d.settings.name}</strong> {d.isThisDevice && <span className="tag">this device</span>}
+                <strong className="row" style={{ display: 'inline-flex' }}><Icon name={ICON[d.settings.platform] ?? 'monitor'} size={16} />{d.settings.name}</strong> {d.isThisDevice && <span className="tag">this device</span>}
                 <div className="muted small">
                   {d.settings.platform} · {d.settings.mode === 'folder' ? 'folder mode' : 'sets wallpaper'}{seen ? ` · seen ${new Date(seen).toLocaleString()}` : ''}
                 </div>

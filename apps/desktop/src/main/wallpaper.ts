@@ -2,6 +2,18 @@ import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export type Target = 'home' | 'lock' | 'both';
+export type Fit = 'fill' | 'fit' | 'stretch' | 'center' | 'tile' | 'span';
+
+/** Windows: WallpaperStyle / TileWallpaper registry values. */
+const WIN_STYLE: Record<Fit, [string, string]> = { fill: ['10', '0'], fit: ['6', '0'], stretch: ['2', '0'], center: ['0', '0'], tile: ['0', '1'], span: ['22', '0'] };
+/** GNOME / Cinnamon / MATE picture-options. */
+const GNOME_OPT: Record<Fit, string> = { fill: 'zoom', fit: 'scaled', stretch: 'stretched', center: 'centered', tile: 'wallpaper', span: 'spanned' };
+/** XFCE image-style. */
+const XFCE_STYLE: Record<Fit, string> = { fill: '5', fit: '4', stretch: '3', center: '1', tile: '2', span: '6' };
+const KDE_MODE: Record<Fit, string> = { fill: 'preserveAspectCrop', fit: 'preserveAspectFit', stretch: 'stretch', center: 'pad', tile: 'tile', span: 'preserveAspectCrop' };
+const SWAY_MODE: Record<Fit, string> = { fill: 'fill', fit: 'fit', stretch: 'stretch', center: 'center', tile: 'tile', span: 'fill' };
+const FEH_FLAG: Record<Fit, string> = { fill: '--bg-fill', fit: '--bg-max', stretch: '--bg-scale', center: '--bg-center', tile: '--bg-tile', span: '--bg-fill' };
+const NITROGEN_FLAG: Record<Fit, string> = { fill: '--set-zoom-fill', fit: '--set-zoom', stretch: '--set-scaled', center: '--set-centered', tile: '--set-tiled', span: '--set-zoom-fill' };
 
 function run(cmd: string, args: string[], env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -22,6 +34,9 @@ public class WallpepperNative {
   public static extern bool SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
 }
 "@
+$key = 'HKCU:\\Control Panel\\Desktop'
+Set-ItemProperty -Path $key -Name WallpaperStyle -Value $env:WP_STYLE
+Set-ItemProperty -Path $key -Name TileWallpaper -Value $env:WP_TILE
 if (-not [WallpepperNative]::SystemParametersInfo(20, 0, $env:WP_PATH, 3)) { throw 'SystemParametersInfo failed' }
 `;
 
@@ -47,13 +62,16 @@ $t2.Wait(-1) | Out-Null
 
 export const WINDOWS_SCRIPTS = { desktop: WIN_DESKTOP, lock: WIN_LOCK };
 
-async function winPs(script: string, file: string) {
-  await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { WP_PATH: file });
+async function winPs(script: string, file: string, fit: Fit = 'fill') {
+  const [style, tile] = WIN_STYLE[fit] ?? WIN_STYLE.fill;
+  await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    WP_PATH: file, WP_STYLE: style, WP_TILE: tile,
+  });
 }
 
 // ---------- macOS ----------
 
-async function setMac(file: string, target: Target): Promise<string | undefined> {
+async function setMac(file: string, target: Target, fit: Fit): Promise<string | undefined> {
   if (target !== 'lock') {
     await run('osascript', [
       '-e',
@@ -63,8 +81,10 @@ async function setMac(file: string, target: Target): Promise<string | undefined>
   if (target === 'lock') {
     throw new Error('macOS does not let apps set the lock screen separately. The lock screen mirrors your desktop wallpaper — use "Home" or "Both".');
   }
-  if (target === 'both') return 'macOS uses your desktop wallpaper on the lock screen too.';
-  return undefined;
+  const notes: string[] = [];
+  if (target === 'both') notes.push('macOS uses your desktop wallpaper on the lock screen too.');
+  if (fit !== 'fill') notes.push('macOS has its own scaling setting: change it in System Settings › Wallpaper.');
+  return notes.join(' ') || undefined;
 }
 
 // ---------- Linux ----------
@@ -82,7 +102,7 @@ async function has(cmd: string): Promise<boolean> {
   return tryRun('which', [cmd]);
 }
 
-async function setLinux(file: string, target: Target): Promise<string | undefined> {
+async function setLinux(file: string, target: Target, fit: Fit): Promise<string | undefined> {
   const uri = pathToFileURL(file).toString();
   const desktop = (process.env.XDG_CURRENT_DESKTOP ?? process.env.DESKTOP_SESSION ?? '').toLowerCase();
   const notes: string[] = [];
@@ -91,7 +111,9 @@ async function setLinux(file: string, target: Target): Promise<string | undefine
 
   if (/kde|plasma/.test(desktop)) {
     if (wantHome) {
-      if (!(await tryRun('plasma-apply-wallpaperimage', [file]))) throw new Error('plasma-apply-wallpaperimage not found (needs Plasma 5.25+).');
+      // --fill-mode needs a recent Plasma; older versions only take the image
+      const ok = (await tryRun('plasma-apply-wallpaperimage', ['--fill-mode', KDE_MODE[fit], file])) || (await tryRun('plasma-apply-wallpaperimage', [file]));
+      if (!ok) throw new Error('plasma-apply-wallpaperimage not found (needs Plasma 5.25+).');
     }
     if (wantLock) {
       const kw = (await has('kwriteconfig6')) ? 'kwriteconfig6' : 'kwriteconfig5';
@@ -102,18 +124,24 @@ async function setLinux(file: string, target: Target): Promise<string | undefine
     if (wantHome) {
       const props = (await run('xfconf-query', ['-c', 'xfce4-desktop', '-l'])).split('\n').filter((p) => p.endsWith('/last-image'));
       if (!props.length) throw new Error('No XFCE desktop properties found.');
-      for (const p of props) await run('xfconf-query', ['-c', 'xfce4-desktop', '-p', p, '-s', file]);
+      for (const p of props) {
+        await run('xfconf-query', ['-c', 'xfce4-desktop', '-p', p, '-s', file]);
+        await tryRun('xfconf-query', ['-c', 'xfce4-desktop', '-p', p.replace(/last-image$/, 'image-style'), '-n', '-t', 'int', '-s', XFCE_STYLE[fit]]);
+      }
     }
     if (wantLock) notes.push('XFCE has no separate lock screen wallpaper.');
   } else if (/mate/.test(desktop)) {
-    if (wantHome) await run('gsettings', ['set', 'org.mate.background', 'picture-filename', file]);
+    if (wantHome) {
+      await run('gsettings', ['set', 'org.mate.background', 'picture-filename', file]);
+      await tryRun('gsettings', ['set', 'org.mate.background', 'picture-options', GNOME_OPT[fit]]);
+    }
     if (wantLock) notes.push('MATE has no separate lock screen wallpaper.');
   } else if (/gnome|unity|budgie|pantheon|cinnamon|x-cinnamon|ubuntu|zorin|pop/.test(desktop)) {
     const schema = /cinnamon/.test(desktop) ? 'org.cinnamon.desktop.background' : 'org.gnome.desktop.background';
     if (wantHome) {
       await run('gsettings', ['set', schema, 'picture-uri', uri]);
       await tryRun('gsettings', ['set', schema, 'picture-uri-dark', uri]);
-      await tryRun('gsettings', ['set', schema, 'picture-options', 'zoom']);
+      await tryRun('gsettings', ['set', schema, 'picture-options', GNOME_OPT[fit]]);
     }
     if (wantLock) {
       const lockSchema = /cinnamon/.test(desktop) ? 'org.cinnamon.desktop.screensaver' : 'org.gnome.desktop.screensaver';
@@ -121,11 +149,11 @@ async function setLinux(file: string, target: Target): Promise<string | undefine
       if (!ok) notes.push('Lock screen wallpaper is not configurable on this GNOME version (it follows the desktop wallpaper).');
     }
   } else if (process.env.SWAYSOCK) {
-    await run('swaymsg', ['output', '*', 'bg', file, 'fill']);
+    await run('swaymsg', ['output', '*', 'bg', file, SWAY_MODE[fit]]);
   } else if (await has('feh')) {
-    await run('feh', ['--bg-fill', file]);
+    await run('feh', [FEH_FLAG[fit], file]);
   } else if (await has('nitrogen')) {
-    await run('nitrogen', ['--set-zoom-fill', '--save', file]);
+    await run('nitrogen', [NITROGEN_FLAG[fit], '--save', file]);
   } else {
     throw new Error(`Unsupported desktop "${desktop || 'unknown'}". Install feh, or switch to "Download to folder" mode in Settings.`);
   }
@@ -133,9 +161,9 @@ async function setLinux(file: string, target: Target): Promise<string | undefine
 }
 
 /** Set the wallpaper from a local file. Resolves to an optional note for the user. */
-export async function setWallpaperFile(file: string, target: Target): Promise<string | undefined> {
+export async function setWallpaperFile(file: string, target: Target, fit: Fit = 'fill'): Promise<string | undefined> {
   if (process.platform === 'win32') {
-    if (target !== 'lock') await winPs(WIN_DESKTOP, file);
+    if (target !== 'lock') await winPs(WIN_DESKTOP, file, fit);
     if (target !== 'home') {
       try {
         await winPs(WIN_LOCK, file);
@@ -146,6 +174,6 @@ export async function setWallpaperFile(file: string, target: Target): Promise<st
     }
     return undefined;
   }
-  if (process.platform === 'darwin') return setMac(file, target);
-  return setLinux(file, target);
+  if (process.platform === 'darwin') return setMac(file, target, fit);
+  return setLinux(file, target, fit);
 }

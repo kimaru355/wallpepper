@@ -7,25 +7,29 @@ import { bootstrap, useAppState } from './src/ctx';
 import { useInsets } from './src/insets';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { BrowseScreen } from './src/screens/BrowseScreen';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { Onboarding } from './src/screens/Onboarding';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { SourcesScreen } from './src/screens/SourcesScreen';
 import { checkUpdate, downloadAndInstall } from './src/update';
-import { colors } from './src/ui';
+import { colors, Icon } from './src/ui';
+import { CompatHost } from './src/compat';
+import type { IconName } from '@wallpepper/core';
 
-const TABS = [
-  { id: 'browse', label: 'Browse', icon: '🔍', Screen: BrowseScreen },
-  { id: 'library', label: 'Library', icon: '🖼️', Screen: LibraryScreen },
-  { id: 'sources', label: 'Sources', icon: '🌐', Screen: SourcesScreen },
-  { id: 'account', label: 'Devices', icon: '☁️', Screen: AccountScreen },
-  { id: 'settings', label: 'Settings', icon: '⚙️', Screen: SettingsScreen },
-] as const;
+const TABS: { id: string; label: string; icon: IconName; Screen: () => React.JSX.Element }[] = [
+  { id: "home", label: "Home", icon: "home", Screen: HomeScreen },
+  { id: "browse", label: "Browse", icon: "browse", Screen: BrowseScreen },
+  { id: "library", label: "Library", icon: "library", Screen: LibraryScreen },
+  { id: "account", label: "Devices", icon: "devices", Screen: AccountScreen },
+  { id: "settings", label: "Settings", icon: "settings", Screen: SettingsScreen },
+];
 
 function Main() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('browse');
+  const [tab, setTab] = useState<string>('home');
   const state = useAppState();
   const insets = useInsets();
   const s = getDeviceSettings(state);
+  const onboarded = state.local.onboarded;
 
   // Keep the OS background scheduler in line with this device's (possibly remotely edited) settings.
   useEffect(() => {
@@ -34,6 +38,7 @@ function Main() {
 
   // Offer a new release once per launch (the Settings tab can also check manually).
   useEffect(() => {
+    if (!onboarded) return;
     checkUpdate()
       .then((u) => {
         if (!u) return;
@@ -43,23 +48,35 @@ function Main() {
         ]);
       })
       .catch(() => {});
-  }, []);
+  }, [onboarded]);
+
+  // First run: info slides, account, wallpaper engine, fit.
+  if (!onboarded) {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="light" />
+        <Onboarding />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}><Text style={styles.brand}>Wallpepper</Text></View>
       <View style={{ flex: 1 }}>
-        {/* Browse stays mounted to keep its results and scroll position. */}
+        {/* Home and Browse stay mounted to keep their results and scroll position. */}
+        <View style={{ flex: 1, display: tab === 'home' ? 'flex' : 'none' }}><HomeScreen /></View>
         <View style={{ flex: 1, display: tab === 'browse' ? 'flex' : 'none' }}><BrowseScreen /></View>
-        {TABS.filter((t) => t.id !== 'browse' && t.id === tab).map(({ id, Screen }) => (
+        {TABS.filter((t) => t.id !== 'browse' && t.id !== 'home' && t.id === tab).map(({ id, Screen }) => (
           <View key={id} style={{ flex: 1 }}><Screen /></View>
         ))}
       </View>
+      <CompatHost />
       <View style={[styles.tabs, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {TABS.map((t) => (
           <Pressable key={t.id} style={styles.tab} onPress={() => setTab(t.id)}>
-            <Text style={{ fontSize: 18, opacity: tab === t.id ? 1 : 0.5 }}>{t.icon}</Text>
+            <Icon name={t.icon} size={22} color={tab === t.id ? colors.accent : colors.muted} />
             <Text style={{ color: tab === t.id ? colors.accent : colors.muted, fontSize: 11 }}>{t.label}</Text>
           </Pressable>
         ))}

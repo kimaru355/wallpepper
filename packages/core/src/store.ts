@@ -31,6 +31,7 @@ export function defaultDeviceSettings(d: DeviceDefaults): DeviceSettings {
     target: 'both',
     mode: 'apply',
     syncEnabled: true,
+    fit: 'fill',
     ...d.settings,
   };
 }
@@ -59,6 +60,9 @@ export class Store {
         secrets: {},
         rotation: { lastWallpaperId: null, lastAt: 0 },
         lastSyncAt: 0,
+        onboarded: false,
+        cache: {},
+        downloadDirs: {},
       },
     };
   }
@@ -70,13 +74,18 @@ export class Store {
         const saved = JSON.parse(raw) as State;
         this.state = {
           records: saved.records ?? {},
-          local: { ...this.state.local, ...saved.local },
+          // Installs from before onboarding existed skip it.
+          local: { ...this.state.local, ...saved.local, onboarded: saved.local?.onboarded ?? true },
         };
       }
     } catch {
       /* corrupt file: start fresh */
     }
     const key = recordKey('deviceSettings', this.state.local.deviceId);
+    const mine = this.state.records[key];
+    if (mine && !mine.deleted && !(mine.data as DeviceSettings).fit) {
+      this.state.records[key] = { ...mine, data: { ...mine.data, fit: 'fill' } };
+    }
     if (!this.state.records[key]) {
       this.put('deviceSettings', this.state.local.deviceId, defaultDeviceSettings(this.defaults));
     }

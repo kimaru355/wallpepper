@@ -6,11 +6,11 @@ import {
   removeCustomSource,
   setSourceEnabled,
   SOURCE_TYPE_HELP,
-  sourceNeedsKey,
   updateSourceOptions,
   type SourceConfig,
   type SourceType,
 } from '@wallpepper/core';
+import { Icon } from '../components';
 import { getCtx } from '../ctx';
 import { useAppState } from '../hooks';
 import { toast } from '../toast';
@@ -40,7 +40,6 @@ function SourceRow({ s }: { s: SourceConfig }) {
   const { store } = getCtx();
   const [open, setOpen] = useState(false);
   const [opts, setOpts] = useState<Record<string, string>>(s.options);
-  const needsKey = sourceNeedsKey(s) && !s.options.apiKey;
   const editable = (SOURCE_TYPE_HELP[s.type]?.fields ?? []).length > 0;
   return (
     <div className="source">
@@ -51,7 +50,6 @@ function SourceRow({ s }: { s: SourceConfig }) {
           <div className="muted small">
             {s.categories.length ? s.categories.map((c) => CATEGORIES.find((x) => x.id === c)?.label ?? c).join(' · ') : 'Any category (keyword search)'}
           </div>
-          {needsKey && <div className="warn small">Needs an API key to work – click Options.</div>}
         </div>
         <div className="row">
           {editable && <button onClick={() => setOpen(!open)}>{open ? 'Close' : 'Options'}</button>}
@@ -117,17 +115,18 @@ function AddSource({ onDone }: { onDone: () => void }) {
   );
 }
 
+/** Where wallpapers come from (shown inside Settings). */
 export function Sources() {
   const state = useAppState();
   const [adding, setAdding] = useState(false);
   const sources = getSources(state);
   return (
-    <div className="page narrow">
+    <div>
       <div className="row between">
         <h2>Sources</h2>
-        {!adding && <button className="primary" onClick={() => setAdding(true)}>＋ Add source</button>}
+        {!adding && <button className="primary ibtn" onClick={() => setAdding(true)}><Icon name="plus" size={16} />Add source</button>}
       </div>
-      <p className="muted">The six built-in sources can be turned off but not removed. Custom sources are saved to your account and sync to your other devices.</p>
+      <p className="muted">The six built-in sources work without any account or key. You can turn them off but not remove them. Custom sources are saved to your account and sync to your other devices.</p>
       {adding && <AddSource onDone={() => setAdding(false)} />}
       {sources.map((s) => <SourceRow key={s.id + JSON.stringify(s.options)} s={s} />)}
     </div>

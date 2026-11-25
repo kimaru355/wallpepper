@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CATEGORIES, getSources, sourceSupports, type Sort, type Wallpaper } from '@wallpepper/core';
 import { getCtx } from '../ctx';
-import { GroupDialog, Preview, WallpaperCard } from '../components';
+import { GroupDialog, Icon, Preview, WallpaperCard } from '../components';
 import { useAppState, useBrowse } from '../hooks';
 
 export function Browse() {
@@ -65,15 +65,16 @@ export function Browse() {
             <option value="all">All sources</option>
             {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <button className="primary" type="submit">Search</button>
+          <button className="primary ibtn" type="submit"><Icon name="search" size={16} />Search</button>
         </form>
       </div>
 
+      {b.fromCache && <div className="notice">Showing saved results{b.loading ? ' · refreshing…' : ' (offline)'}</div>}
       {b.errors.map((e) => (
         <div key={e.sourceId} className="notice">{e.sourceName}: {e.message}</div>
       ))}
       {!b.loading && !b.items.length && !b.errors.length && (
-        <div className="empty">No enabled source offers this category. Enable or add one in Sources.</div>
+        <div className="empty">No enabled source offers this category. Turn one on in Settings › Sources.</div>
       )}
 
       <div className="grid">

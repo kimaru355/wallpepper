@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { State } from '@wallpepper/core';
+import type { BrowseController, State } from '@wallpepper/core';
 import { getCtx } from './ctx';
 
 export function useAppState(): State {
@@ -10,6 +10,11 @@ export function useAppState(): State {
 export function useBrowse() {
   const { browse } = getCtx();
   return useSyncExternalStore(browse.subscribe, browse.getState);
+}
+
+/** Subscribes to any BrowseController. */
+export function useBrowseOf(c: BrowseController) {
+  return useSyncExternalStore(c.subscribe, c.getState);
 }
 
 export function useSyncStatus() {

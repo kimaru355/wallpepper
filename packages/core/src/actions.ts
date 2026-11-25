@@ -1,4 +1,4 @@
-import { getGroups, getLibrary, getMemberships, getSources } from './selectors.ts';
+import { getGroups, getGroupSubtreeIds, getLibrary, getMemberships, getSources } from './selectors.ts';
 import { recordKey, uid, type Store } from './store.ts';
 import { SOURCE_TYPE_HELP } from './sources/index.ts';
 import { ALL_GROUP_ID, type DeviceSettings, type Group, type SourceConfig, type SourceType, type Wallpaper } from './types.ts';
@@ -14,42 +14,64 @@ export function saveToLibrary(store: Store, w: Wallpaper): void {
 }
 
 export function removeFromLibrary(store: Store, wallpaperId: string): void {
-  const items: { kind: 'wallpaper' | 'membership'; id: string; data: unknown; deleted: boolean }[] = [];
+  const items: { kind: "wallpaper" | "membership" | "variant"; id: string; data: unknown; deleted: boolean }[] = [];
   const rec = store.state.records[recordKey('wallpaper', wallpaperId)];
   if (rec) items.push({ kind: 'wallpaper', id: wallpaperId, data: rec.data, deleted: true });
+  const variant = store.state.records[recordKey('variant', wallpaperId)];
+  if (variant && !variant.deleted) items.push({ kind: 'variant' as const, id: wallpaperId, data: variant.data, deleted: true });
   for (const m of getMemberships(store.state).filter((m) => m.wallpaperId === wallpaperId)) {
     items.push({ kind: 'membership', id: membershipId(m.groupId, m.wallpaperId), data: m, deleted: true });
   }
   if (items.length) store.putMany(items);
 }
 
-export function createGroup(store: Store, name: string): Group {
+const BAD_NAME = /[\\/:*?"<>|]/;
+
+/** Creates a group, or a sub-group when `parentId` is given. Names are unique among siblings. */
+export function createGroup(store: Store, name: string, opts: { parentId?: string; category?: string } = {}): Group {
   const clean = name.trim();
   if (!clean) throw new Error('Group name is empty.');
-  if (clean.toLowerCase() === 'all') throw new Error('"All" is the default group.');
-  const dup = getGroups(store.state).find((g) => g.name.toLowerCase() === clean.toLowerCase());
+  const parentId = opts.parentId && getGroups(store.state).some((g) => g.id === opts.parentId) ? opts.parentId : undefined;
+  if (!parentId && clean.toLowerCase() === 'all') throw new Error('"All" is the default group.');
+  if (BAD_NAME.test(clean)) throw new Error('A group name cannot contain \\ / : * ? " < > |');
+  const dup = getGroups(store.state).find((g) => g.parentId === parentId && g.name.toLowerCase() === clean.toLowerCase());
   if (dup) return dup;
   const g: Group = { id: uid(), name: clean };
+  if (parentId) g.parentId = parentId;
+  if (opts.category) g.category = opts.category;
   store.put('group', g.id, g);
   return g;
 }
 
 export function renameGroup(store: Store, groupId: string, name: string): void {
   const g = getGroups(store.state).find((x) => x.id === groupId);
-  if (!g || !name.trim()) return;
-  store.put('group', groupId, { ...g, name: name.trim() });
+  const clean = name.trim();
+  if (!g || !clean) return;
+  if (BAD_NAME.test(clean)) throw new Error('A group name cannot contain \\ / : * ? " < > |');
+  if (getGroups(store.state).some((x) => x.id !== g.id && x.parentId === g.parentId && x.name.toLowerCase() === clean.toLowerCase())) {
+    throw new Error('Another group here already has that name.');
+  }
+  store.put('group', groupId, { ...g, name: clean });
 }
 
+export function setGroupCategory(store: Store, groupId: string, category: string): void {
+  const g = getGroups(store.state).find((x) => x.id === groupId);
+  if (g) store.put('group', groupId, { ...g, category });
+}
+
+/** Deletes the group AND its sub-groups. The wallpapers stay in All. */
 export function deleteGroup(store: Store, groupId: string): void {
   const g = getGroups(store.state).find((x) => x.id === groupId);
   if (!g) return;
-  const items: any[] = [{ kind: 'group', id: groupId, data: g, deleted: true }];
-  for (const m of getMemberships(store.state).filter((m) => m.groupId === groupId)) {
+  const doomed = getGroupSubtreeIds(store.state, groupId);
+  const items: any[] = [];
+  for (const group of getGroups(store.state).filter((x) => doomed.has(x.id))) items.push({ kind: 'group', id: group.id, data: group, deleted: true });
+  for (const m of getMemberships(store.state).filter((m) => doomed.has(m.groupId))) {
     items.push({ kind: 'membership', id: membershipId(m.groupId, m.wallpaperId), data: m, deleted: true });
   }
-  // Devices pointing at this group fall back to "All".
+  // Devices pointing at a deleted group fall back to "All".
   for (const r of Object.values(store.state.records)) {
-    if (r.kind === 'deviceSettings' && !r.deleted && (r.data as DeviceSettings).activeGroupId === groupId) {
+    if (r.kind === 'deviceSettings' && !r.deleted && doomed.has((r.data as DeviceSettings).activeGroupId)) {
       items.push({ kind: 'deviceSettings', id: r.id, data: { ...r.data, activeGroupId: ALL_GROUP_ID } });
     }
   }
@@ -66,10 +88,14 @@ export function addToGroup(store: Store, w: Wallpaper, groupId: string): void {
   store.put('membership', id, { groupId, wallpaperId: w.id });
 }
 
+/** Removes the wallpaper from a group and from the group's sub-groups (it is shown there because of them). */
 export function removeFromGroup(store: Store, wallpaperId: string, groupId: string): void {
   if (groupId === ALL_GROUP_ID) return removeFromLibrary(store, wallpaperId);
-  const id = membershipId(groupId, wallpaperId);
-  store.put('membership', id, { groupId, wallpaperId }, true);
+  const tree = getGroupSubtreeIds(store.state, groupId);
+  const items = getMemberships(store.state)
+    .filter((m) => m.wallpaperId === wallpaperId && tree.has(m.groupId))
+    .map((m) => ({ kind: 'membership' as const, id: membershipId(m.groupId, m.wallpaperId), data: m, deleted: true }));
+  if (items.length) store.putMany(items);
 }
 
 export function updateDeviceSettings(store: Store, deviceId: string, patch: Partial<DeviceSettings>): void {

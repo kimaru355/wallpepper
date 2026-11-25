@@ -1,15 +1,19 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, screen, shell, Tray } from 'electron';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { hostname } from 'node:os';
-import { extname, join } from 'node:path';
-import { setWallpaperFile, type Target } from './wallpaper.ts';
+import { extname, join, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { setWallpaperFile, type Fit, type Target } from './wallpaper.ts';
 import * as updater from './updater.ts';
 
 const UA = 'Wallpepper/0.1 (+desktop)';
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+
+// Images are served to the UI through wpimg:// so they come from the on-disk cache (works offline).
+protocol.registerSchemesAsPrivileged([{ scheme: 'wpimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 
 const userFile = (name: string) => join(app.getPath('userData'), name);
 
@@ -53,6 +57,8 @@ async function fetchToFile(url: string, dir: string, baseName: string): Promise<
   return target;
 }
 
+/** Group / sub-group names become real folders. Names are sanitised so they cannot escape the wallpaper folder. */
+const cleanSub = (subPath: unknown): string[] => (Array.isArray(subPath) ? subPath : []).map((p) => String(p).replace(/[\\/:*?"<>|]/g, '_').trim()).filter((p) => p && p !== '.' && p !== '..');
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'wallpaper';
 const hash = (s: string) => createHash('sha1').update(s).digest('hex').slice(0, 10);
 
@@ -78,17 +84,44 @@ function registerIpc() {
     return res.json();
   });
 
-  ipcMain.handle('wallpaper:set', async (_e, w: { id: string; url: string }, target: Target) => {
+  ipcMain.handle('wallpaper:set', async (_e, w: { id: string; url: string }, target: Target, fit: Fit) => {
     // The current wallpaper cache keeps the last few files around.
     const dir = join(app.getPath('userData'), 'cache');
     const file = await fetchToFile(w.url, dir, hash(w.id));
-    const note = await setWallpaperFile(file, target);
+    const note = await setWallpaperFile(file, target, fit ?? 'fill');
     void pruneCache(dir, file);
     return { note };
   });
 
-  ipcMain.handle('wallpaper:download', async (_e, w: { id: string; url: string; title?: string }, folder: string) => {
-    return fetchToFile(w.url, folder, `${slug(w.title ?? 'wallpaper')}-${hash(w.id)}`);
+  ipcMain.handle('wallpaper:download', async (_e, w: { id: string; url: string; title?: string }, folder: string, subPath: string[] = []) => {
+    const clean = cleanSub(subPath);
+    const dir = resolve(join(folder, ...clean));
+    if (!dir.startsWith(resolve(folder) + sep) && dir !== resolve(folder)) throw new Error('Invalid folder');
+    return fetchToFile(w.url, dir, `${slug(w.title ?? 'wallpaper')}-${hash(w.id)}`);
+  });
+
+  // The renderer draws crops / blurred backgrounds on a canvas and sends the finished JPEG here.
+  ipcMain.handle('wallpaper:setData', async (_e, data: ArrayBuffer, name: string, target: Target) => {
+    const dir = join(app.getPath('userData'), 'cache');
+    await fs.mkdir(dir, { recursive: true });
+    const file = join(dir, `r-${String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}.jpg`);
+    await fs.writeFile(file, Buffer.from(data));
+    const note = await setWallpaperFile(file, target, 'fill');
+    void pruneCache(dir, file);
+    return { note };
+  });
+  ipcMain.handle('wallpaper:saveData', async (_e, data: ArrayBuffer, folder: string, subPath: string[], name: string) => {
+    const clean = cleanSub(subPath);
+    const dir = resolve(join(folder, ...clean));
+    if (!dir.startsWith(resolve(folder) + sep) && dir !== resolve(folder)) throw new Error('Invalid folder');
+    await fs.mkdir(dir, { recursive: true });
+    const file = join(dir, `${String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}.jpg`);
+    await fs.writeFile(file, Buffer.from(data));
+    return file;
+  });
+  ipcMain.handle('cache:size', async () => dirSize(IMG_CACHE()));
+  ipcMain.handle('cache:clear', async () => {
+    await fs.rm(IMG_CACHE(), { recursive: true, force: true });
   });
 
   ipcMain.handle('dialog:folder', async () => {
@@ -100,6 +133,7 @@ function registerIpc() {
     hostname: hostname(),
     platform: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux',
     defaultFolder: join(app.getPath('pictures'), 'Wallpepper'),
+    screen: (() => { const d = screen.getPrimaryDisplay(); return { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) }; })(),
     version: app.getVersion(),
     autostart: app.getLoginItemSettings().openAtLogin,
     closeToTray: prefs.closeToTray,
@@ -117,6 +151,61 @@ function registerIpc() {
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     assertHttp(url);
     return shell.openExternal(url);
+  });
+}
+
+const IMG_CACHE = () => join(app.getPath('userData'), 'imgcache');
+const IMG_CACHE_MAX = 500 * 1024 * 1024;
+
+async function dirSize(dir: string): Promise<number> {
+  try {
+    const names = await fs.readdir(dir);
+    return (await Promise.all(names.map((n) => fs.stat(join(dir, n)).then((s) => s.size).catch(() => 0)))).reduce((a, b) => a + b, 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** Oldest cached images go first once the cache is over its limit. */
+async function pruneImgCache() {
+  try {
+    const dir = IMG_CACHE();
+    const files = await Promise.all((await fs.readdir(dir)).map(async (f) => ({ f: join(dir, f), ...(await fs.stat(join(dir, f))) })));
+    let total = files.reduce((n, x) => n + x.size, 0);
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const x of files) {
+      if (total <= IMG_CACHE_MAX * 0.8) break;
+      await fs.unlink(x.f).catch(() => {});
+      total -= x.size;
+    }
+  } catch { /* nothing cached yet */ }
+}
+
+/** wpimg://i/<base64url of the image url>: serve from disk, download (and keep) on the first request. */
+function registerImageProtocol() {
+  protocol.handle('wpimg', async (req) => {
+    try {
+      const url = Buffer.from(new URL(req.url).pathname.slice(1), 'base64url').toString();
+      assertHttp(url);
+      const dir = IMG_CACHE();
+      const file = join(dir, createHash('sha1').update(url).digest('hex'));
+      try {
+        await fs.access(file);
+        const local = await net.fetch(pathToFileURL(file).toString());
+        return new Response(local.body, { status: local.status, headers: { 'access-control-allow-origin': '*', 'content-type': (local.headers.get('content-type') ?? 'image/jpeg') } });
+      } catch { /* not cached yet */ }
+      const res = await net.fetch(url, { headers: { 'User-Agent': UA } });
+      if (!res.ok) return new Response(null, { status: res.status, headers: { 'access-control-allow-origin': '*' } });
+      const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
+      if (type && !type.startsWith('image/')) return new Response(null, { status: 415 });
+      const buf = Buffer.from(await res.arrayBuffer());
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(file + '.part', buf);
+      await fs.rename(file + '.part', file);
+      return new Response(buf, { headers: { 'content-type': type || 'image/jpeg', 'access-control-allow-origin': '*' } });
+    } catch {
+      return new Response(null, { status: 504, headers: { 'access-control-allow-origin': '*' } });
+    }
   });
 }
 
@@ -203,6 +292,8 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     await loadPrefs();
     registerIpc();
+    registerImageProtocol();
+    setTimeout(() => void pruneImgCache(), 20_000);
     createTray();
     createWindow(process.argv.includes('--hidden'));
     // Look for a new release shortly after start and then every 6 hours (packaged builds only).

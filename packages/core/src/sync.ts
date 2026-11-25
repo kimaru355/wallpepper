@@ -1,6 +1,7 @@
 import { getDeviceSettings } from './selectors.ts';
 import type { Store } from './store.ts';
-import type { Device, SyncRecord } from './types.ts';
+import { DEFAULT_SERVER_URL, type Device, type SyncRecord } from './types.ts';
+import type { CommunityDetail, CommunityFilters, CommunityPage, CommunityPublishInput, CommunitySummary } from './community.ts';
 
 export class ApiError extends Error {
   status: number;
@@ -79,20 +80,72 @@ export class SyncManager {
     return json as T;
   }
 
-  async authenticate(mode: 'login' | 'register', serverUrl: string, email: string, password: string): Promise<void> {
+  /**
+   * Sign in (`identifier` = email or username) or create an account (needs email + username).
+   * Everything created on this device before signing in becomes part of the account.
+   */
+  async authenticate(
+    mode: 'login' | 'register',
+    identifier: string,
+    password: string,
+    opts: { username?: string; serverUrl?: string } = {},
+  ): Promise<void> {
     const s = this.store.state;
     const ds = getDeviceSettings(s);
-    const url = normalizeServerUrl(serverUrl);
-    const res = await this.api<{ token: string; email: string }>(`/auth/${mode}`, {
+    const url = normalizeServerUrl(opts.serverUrl ?? s.local.auth?.serverUrl ?? DEFAULT_SERVER_URL);
+    const res = await this.api<{ token: string; email: string; username?: string }>(`/auth/${mode}`, {
       auth: false,
       serverUrl: url,
-      body: { email, password, deviceId: s.local.deviceId, deviceName: ds?.name ?? 'Device', platform: ds?.platform ?? 'unknown' },
+      body: {
+        email: identifier,
+        password,
+        username: mode === 'register' ? opts.username : undefined,
+        deviceId: s.local.deviceId,
+        deviceName: ds?.name ?? 'Device',
+        platform: ds?.platform ?? 'unknown',
+      },
     });
-    this.store.setLocal({ auth: { serverUrl: url, token: res.token, email: res.email }, syncCursor: 0 });
-    // Everything created before logging in becomes part of the account.
+    this.store.setLocal({ auth: { serverUrl: url, token: res.token, email: res.email, username: res.username }, syncCursor: 0 });
     this.store.markAllDirty();
     await this.sync();
     this.startAuto();
+  }
+
+  /** Sets the community username of an account created before usernames existed. */
+  async setUsername(username: string): Promise<void> {
+    const r = await this.api<{ username: string }>('/me/username', { body: { username } });
+    const auth = this.store.state.local.auth;
+    if (auth) this.store.setLocal({ auth: { ...auth, username: r.username } });
+  }
+
+  /** Refreshes the username from the server. */
+  async refreshProfile(): Promise<void> {
+    const r = await this.api<{ email: string; username?: string | null }>('/me');
+    const auth = this.store.state.local.auth;
+    if (auth && (r.username ?? undefined) !== auth.username) this.store.setLocal({ auth: { ...auth, username: r.username ?? undefined } });
+  }
+
+  // ---------- community ----------
+
+  communityList(f: CommunityFilters): Promise<CommunityPage> {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '' && v !== false) q.set(k, String(v));
+    return this.api<CommunityPage>('/community?' + q.toString());
+  }
+  communityGet(id: string): Promise<CommunityDetail> {
+    return this.api<CommunityDetail>(`/community/${encodeURIComponent(id)}`);
+  }
+  communityMine(): Promise<{ items: CommunitySummary[] }> {
+    return this.api('/community/mine');
+  }
+  communityPublish(input: CommunityPublishInput): Promise<CommunitySummary> {
+    return this.api<CommunitySummary>('/community', { body: input });
+  }
+  async communityRemove(id: string): Promise<void> {
+    await this.api(`/community/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  async communityImported(id: string): Promise<void> {
+    await this.api(`/community/${encodeURIComponent(id)}/import`, { method: 'POST', body: {} }).catch(() => {});
   }
 
   logout(): void {

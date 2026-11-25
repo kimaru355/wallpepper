@@ -1,20 +1,65 @@
 import { saveToLibrary } from './actions.ts';
-import { getDeviceSettings, getGroupWallpapers, type LibraryItem } from './selectors.ts';
+import { resolveForThisDevice, type Crop } from './compat.ts';
+import { getDeviceSettings, getGroupPath, getGroupWallpapers, getWallpaperFolders, type LibraryItem } from './selectors.ts';
 import type { Store } from './store.ts';
-import type { Wallpaper, WallpaperTarget } from './types.ts';
+import { ALL_GROUP_ID, type FitMode, type State, type Wallpaper, type WallpaperTarget } from './types.ts';
 
 /** Implemented per platform (Electron main process / Android native module). */
 export interface PlatformActions {
-  /** Download to the device's wallpaper folder; resolves to the saved file path/URI. */
-  download(w: Wallpaper, folderPath: string): Promise<string>;
-  /** Set as system wallpaper. The platform fetches the image itself. */
-  setWallpaper(w: Wallpaper, target: WallpaperTarget): Promise<void>;
+  /**
+   * How folder mode lays files out: 'tree' = real sub folders (Anime/Naruto), 'albums' = flat albums where a
+   * wallpaper is added to the root album and to one album per group it belongs to (Android has no nested albums).
+   */
+  folderLayout: 'tree' | 'albums';
+  /**
+   * Download into the device's wallpaper folder (+ `subPath` sub folders); resolves to the saved file path/URI.
+   * With `render` the platform must save the image already cropped / on a blurred background.
+   */
+  download(w: Wallpaper, folderPath: string, subPath: string[], render?: { fit: FitMode; crop?: Crop }): Promise<string>;
+  /** Set as system wallpaper. The platform fetches the image itself and applies `fit` (incl. 'blur') and `crop`. */
+  setWallpaper(w: Wallpaper, target: WallpaperTarget, fit: FitMode, crop?: Crop): Promise<void>;
 }
 
+const sameDir = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** Folders a wallpaper should be written to in folder mode. */
+export function folderDirs(state: State, platform: PlatformActions, wallpaperId: string): string[][] {
+  const groups = getWallpaperFolders(state, wallpaperId);
+  if (!groups.length) return [[]];
+  if (platform.folderLayout === 'tree') return groups;
+  // albums: root + every album on the way to each group (Wallpepper, Wallpepper - Anime, Wallpepper - Anime - Naruto)
+  const out: string[][] = [[]];
+  for (const g of groups) for (let i = 1; i <= g.length; i++) if (!out.some((d) => sameDir(d, g.slice(0, i)))) out.push(g.slice(0, i));
+  return out;
+}
+
+/** Path (relative to the wallpaper folder) to point the OS wallpaper slideshow at to get exactly this group. */
+export const folderForGroup = (state: State, groupId: string): string[] =>
+  groupId === ALL_GROUP_ID ? [] : getGroupPath(state, groupId);
+
 /** Download a wallpaper: save file, remember path, and add it to the "All" group. */
-export async function downloadWallpaper(store: Store, platform: PlatformActions, w: Wallpaper): Promise<string> {
-  const path = await platform.download(w, store.state.local.folderPath);
-  store.setLocal({ downloads: { ...store.state.local.downloads, [w.id]: path } });
+export async function downloadWallpaper(
+  store: Store,
+  platform: PlatformActions,
+  w: Wallpaper,
+  subPath: string[] = [],
+  /** Folder mode: save the version made for THIS device (its orientation variant) instead of the original. */
+  forThisDevice = false,
+): Promise<string> {
+  let target = w;
+  let render: { fit: FitMode; crop?: Crop } | undefined;
+  if (forThisDevice) {
+    const r = resolveForThisDevice(store.state, w);
+    target = r.wallpaper;
+    if (r.fit === 'blur' || r.crop) render = { fit: r.fit, crop: r.crop };
+  }
+  const path = await platform.download(target, store.state.local.folderPath, subPath, render);
+  const key = subPath.join('/');
+  const dirs = store.state.local.downloadDirs?.[w.id] ?? [];
+  store.setLocal({
+    downloads: { ...store.state.local.downloads, [w.id]: store.state.local.downloads[w.id] ?? path },
+    downloadDirs: { ...(store.state.local.downloadDirs ?? {}), [w.id]: dirs.includes(key) ? dirs : [...dirs, key] },
+  });
   saveToLibrary(store, w);
   return path;
 }
@@ -31,10 +76,11 @@ export async function applyWallpaper(
 ): Promise<'applied' | 'downloaded'> {
   const s = getDeviceSettings(store.state);
   if (s.mode === 'folder') {
-    await downloadWallpaper(store, platform, w);
+    for (const d of folderDirs(store.state, platform, w.id)) await downloadWallpaper(store, platform, w, d, true);
     return 'downloaded';
   }
-  await platform.setWallpaper(w, target ?? s.target);
+  const r = resolveForThisDevice(store.state, w);
+  await platform.setWallpaper(r.wallpaper, target ?? s.target, r.fit, r.crop);
   saveToLibrary(store, w);
   store.setLocal({ rotation: { lastWallpaperId: w.id, lastAt: Date.now() } });
   return 'applied';
@@ -66,12 +112,14 @@ export async function syncFolder(store: Store, platform: PlatformActions): Promi
   if (s.mode !== 'folder') return 0;
   let n = 0;
   for (const w of getGroupWallpapers(store.state, s.activeGroupId)) {
-    if (store.state.local.downloads[w.id]) continue;
-    try {
-      await downloadWallpaper(store, platform, w);
-      n++;
-    } catch {
-      /* try again next round */
+    for (const d of folderDirs(store.state, platform, w.id)) {
+      if (store.state.local.downloadDirs?.[w.id]?.includes(d.join('/'))) continue;
+      try {
+        await downloadWallpaper(store, platform, w, d, true);
+        n++;
+      } catch {
+        /* try again next round */
+      }
     }
   }
   return n;

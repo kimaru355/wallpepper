@@ -57,22 +57,79 @@ export function getMemberships(state: State): Membership[] {
     .filter((m) => groups.has(m.groupId));
 }
 
+/** Ids of a group and everything below it. */
+export function getGroupSubtreeIds(state: State, groupId: string): Set<string> {
+  const groups = getGroups(state);
+  const ids = new Set<string>([groupId]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const g of groups) {
+      if (g.parentId && ids.has(g.parentId) && !ids.has(g.id)) {
+        ids.add(g.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** Names from the top level group down to this group, e.g. ['Anime', 'Naruto']. */
+export function getGroupPath(state: State, groupId: string): string[] {
+  const byId = new Map(getGroups(state).map((g) => [g.id, g]));
+  const out: string[] = [];
+  let cur = byId.get(groupId);
+  for (let n = 0; cur && n < 20; n++) {
+    out.unshift(cur.name);
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+  }
+  return out;
+}
+
+export interface GroupNode {
+  group: Group;
+  depth: number;
+}
+
+/** Groups as a depth-first tree (parents before their sub-groups, siblings by name). */
+export function getGroupTree(state: State): GroupNode[] {
+  const groups = getGroups(state);
+  const ids = new Set(groups.map((g) => g.id));
+  const kids = new Map<string, Group[]>();
+  for (const g of groups) {
+    const p = g.parentId && ids.has(g.parentId) ? g.parentId : '';
+    kids.set(p, [...(kids.get(p) ?? []), g]);
+  }
+  const out: GroupNode[] = [];
+  const walk = (parent: string, depth: number) => {
+    for (const g of kids.get(parent) ?? []) {
+      out.push({ group: g, depth });
+      if (depth < 10) walk(g.id, depth + 1);
+    }
+  };
+  walk('', 0);
+  return out;
+}
+
+/** Wallpapers of a group INCLUDING its sub-groups ('Anime' also shows Naruto, 'All' shows everything). */
 export function getGroupWallpapers(state: State, groupId: string): LibraryItem[] {
   const lib = getLibrary(state);
   if (groupId === ALL_GROUP_ID) return lib;
-  if (!state.records[recordKey('group', groupId)] || state.records[recordKey('group', groupId)].deleted) return lib;
-  const ids = new Set(getMemberships(state).filter((m) => m.groupId === groupId).map((m) => m.wallpaperId));
+  const rec = state.records[recordKey('group', groupId)];
+  if (!rec || rec.deleted) return lib;
+  const tree = getGroupSubtreeIds(state, groupId);
+  const ids = new Set(getMemberships(state).filter((m) => tree.has(m.groupId)).map((m) => m.wallpaperId));
   return lib.filter((w) => ids.has(w.id));
 }
 
 export function getGroupCounts(state: State): Record<string, number> {
-  const lib = getLibrary(state);
-  const inLib = new Set(lib.map((w) => w.id));
-  const counts: Record<string, number> = { [ALL_GROUP_ID]: lib.length };
-  for (const m of getMemberships(state)) {
-    if (inLib.has(m.wallpaperId)) counts[m.groupId] = (counts[m.groupId] ?? 0) + 1;
-  }
+  const counts: Record<string, number> = { [ALL_GROUP_ID]: getLibrary(state).length };
+  for (const g of getGroups(state)) counts[g.id] = getGroupWallpapers(state, g.id).length;
   return counts;
+}
+
+/** Folders (relative to the wallpaper folder) a wallpaper belongs in: one per group it is a direct member of. */
+export function getWallpaperFolders(state: State, wallpaperId: string): string[][] {
+  return getWallpaperGroupIds(state, wallpaperId).map((g) => getGroupPath(state, g)).filter((p) => p.length);
 }
 
 export function getWallpaperGroupIds(state: State, wallpaperId: string): string[] {
@@ -97,7 +154,7 @@ export function getSources(state: State): SourceConfig[] {
   });
   const builtinIds = new Set(BUILTIN_SOURCES.map((b) => b.id));
   const custom = live<SourceConfig>(state, 'source')
-    .filter((r) => !builtinIds.has(r.id))
+    .filter((r) => !builtinIds.has(r.id) && (r.data.type as string) !== 'tmdb') // TMDB was removed
     .map((r) => withSecrets({ ...r.data, builtin: false }));
   return [...builtins, ...custom];
 }

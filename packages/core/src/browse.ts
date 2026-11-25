@@ -7,6 +7,14 @@ export interface BrowseFilters {
   sort: Sort;
   /** 'all' = mix every enabled source that supports the category */
   sourceId: string | 'all';
+  /** Exact board tag (used by recommended collections). */
+  tag?: string;
+}
+
+/** Persists the first page of a browse view so it shows instantly and works offline. */
+export interface BrowseCache {
+  get(key: string): Wallpaper[] | undefined;
+  set(key: string, items: Wallpaper[]): void;
 }
 
 export interface BrowseState {
@@ -16,6 +24,8 @@ export interface BrowseState {
   /** Per-source failures, shown as a non-blocking notice. */
   errors: { sourceId: string; sourceName: string; message: string }[];
   filters: BrowseFilters;
+  /** Showing remembered results; a refresh is running (or failed: you are offline). */
+  fromCache: boolean;
 }
 
 /**
@@ -32,8 +42,11 @@ export class BrowseController {
   private getSources: () => SourceConfig[];
   private http: Http;
   private orientation: Orientation;
+  private cache?: BrowseCache;
+  private cacheKey = '';
 
-  constructor(getSources: () => SourceConfig[], http: Http, orientation: Orientation, filters?: Partial<BrowseFilters>) {
+  constructor(getSources: () => SourceConfig[], http: Http, orientation: Orientation, filters?: Partial<BrowseFilters>, cache?: BrowseCache) {
+    this.cache = cache;
     this.getSources = getSources;
     this.http = http;
     this.orientation = orientation;
@@ -42,6 +55,7 @@ export class BrowseController {
       loading: false,
       hasMore: true,
       errors: [],
+      fromCache: false,
       filters: { category: 'anime', query: '', sort: 'latest', sourceId: 'all', ...filters },
     };
   }
@@ -75,7 +89,10 @@ export class BrowseController {
       (s) => s.enabled && (sourceId === 'all' ? sourceSupports(s, category) : s.id === sourceId),
     );
     this.cursors = new Map(this.active.map((s) => [s.id, 1]));
-    this.set({ items: [], hasMore: this.active.length > 0, errors: [], loading: false });
+    const f = this.state.filters;
+    this.cacheKey = ['browse', this.orientation, f.category, f.sort, f.query.trim(), f.tag ?? '', this.active.map((s) => s.id).join(',')].join('|');
+    const cached = this.cache?.get(this.cacheKey);
+    this.set({ items: cached ?? [], fromCache: !!cached, hasMore: this.active.length > 0, errors: [], loading: false });
     if (!this.active.length) return;
     await this.loadMore();
   }
@@ -84,11 +101,12 @@ export class BrowseController {
     if (this.state.loading || !this.state.hasMore) return;
     const token = this.token;
     this.set({ loading: true });
-    const { category, query, sort } = this.state.filters;
+    const { category, query, sort, tag } = this.state.filters;
+    const replace = this.state.fromCache;
     const due = this.active.filter((s) => this.cursors.get(s.id) != null);
     const results = await Promise.allSettled(
       due.map((s) => {
-        const params: BrowseParams = { category, query, sort, page: this.cursors.get(s.id)!, orientation: this.orientation };
+        const params: BrowseParams = { category, query, sort, page: this.cursors.get(s.id)!, orientation: this.orientation, tag };
         return fetchPage(s, params, this.http);
       }),
     );
@@ -105,7 +123,9 @@ export class BrowseController {
         errors.push({ sourceId: s.id, sourceName: s.name, message: String(r.reason?.message ?? r.reason) });
       }
     });
-    const seen = new Set(this.state.items.map((w) => w.id));
+    // Fresh results replace remembered ones. If every source failed, keep showing what we remembered.
+    if (replace && !lists.length) return void this.set({ loading: false, errors, hasMore: false });
+    const seen = new Set((replace ? [] : this.state.items).map((w) => w.id));
     const merged: Wallpaper[] = [];
     for (let i = 0; lists.some((l) => i < l.length); i++) {
       for (const l of lists) {
@@ -117,7 +137,10 @@ export class BrowseController {
       }
     }
     const hasMore = [...this.cursors.values()].some((c) => c != null);
-    this.set({ items: [...this.state.items, ...merged], loading: false, hasMore, errors });
+    const items = [...(replace ? [] : this.state.items), ...merged];
+    const firstPage = replace || this.state.items.length === 0;
+    if (firstPage && merged.length) this.cache?.set(this.cacheKey, merged.slice(0, 60));
+    this.set({ items, loading: false, hasMore, errors, fromCache: false });
     // A page can come back empty after orientation filtering although more exists.
     if (!merged.length && hasMore) await this.loadMore();
   }

@@ -7,7 +7,6 @@ import {
   removeCustomSource,
   setSourceEnabled,
   SOURCE_TYPE_HELP,
-  sourceNeedsKey,
   updateSourceOptions,
   type SourceConfig,
   type SourceType,
@@ -39,7 +38,6 @@ function SourceCard({ s }: { s: SourceConfig }) {
         {s.builtin ? 'Built-in · ' : 'Custom · '}
         {s.categories.length ? s.categories.map((c) => CATEGORIES.find((x) => x.id === c)?.label ?? c).join(', ') : 'any category'}
       </Text>
-      {sourceNeedsKey(s) && !s.options.apiKey && <Text style={text.warn}>Needs an API key to work.</Text>}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
         {editable && <Btn title="Options" onPress={() => { setOpts(s.options); setOpen(true); }} />}
         {!s.builtin && (
@@ -86,18 +84,21 @@ function AddSheet({ visible, onClose }: { visible: boolean; onClose: () => void 
   );
 }
 
-export function SourcesScreen() {
+/** Manage where wallpapers come from (lives in Settings). */
+export function SourcesPanel() {
   const state = useAppState();
   const [adding, setAdding] = useState(false);
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+    <View>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <Text style={text.h1}>Sources</Text>
-        <Btn title="＋ Add" kind="primary" onPress={() => setAdding(true)} />
+        <Btn title="Add" icon="plus" kind="primary" onPress={() => setAdding(true)} />
       </View>
-      <Text style={[text.muted, { marginBottom: 12 }]}>The six built-in sources can be switched off but not removed. Custom sources sync to your other devices.</Text>
+      <Text style={[text.muted, { marginBottom: 12 }]}>
+        The six built-in sources work without any account or key. You can switch them off but not remove them. Custom sources sync to your other devices.
+      </Text>
       {getSources(state).map((s) => <SourceCard key={s.id + JSON.stringify(s.options)} s={s} />)}
       <AddSheet visible={adding} onClose={() => setAdding(false)} />
-    </ScrollView>
+    </View>
   );
 }

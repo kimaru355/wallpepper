@@ -4,7 +4,8 @@ import { createFakeServer } from './fakeServer.ts';
 import {
   addCustomSource, addToGroup, BrowseController, createGroup, deleteGroup, getGroupCounts, getGroupWallpapers,
   getLibrary, getSources, removeCustomSource, SyncManager, Store, updateDeviceSettings, setSourceEnabled,
-  pickNext, type StorageAdapter, type Wallpaper,
+  pickNext, removeFromGroup, buildCollection, importCollection, cachedFetch, folderDirs, getGroupTree, getGroupPath, renameGroup,
+  type PlatformActions, type StorageAdapter, type Wallpaper,
 } from '../src/index.ts';
 
 const mem = (): StorageAdapter => {
@@ -18,9 +19,10 @@ const mk = async (name: string, platform: 'linux' | 'android') => {
 };
 const wp = (n: number): Wallpaper => ({ id: `konachan:${n}`, sourceId: 'konachan', url: `https://x/${n}.jpg`, thumb: `https://x/t${n}.jpg` });
 
-test('six built-in sources; builtins cannot be removed, customs can', async () => {
+test('six built-in sources (no TMDB, none needs a key); builtins cannot be removed, customs can', async () => {
   const s = await mk('pc', 'linux');
   assert.equal(getSources(s.state).filter((x) => x.builtin).length, 6);
+  assert.ok(!getSources(s.state).some((x) => x.id === 'tmdb'));
   removeCustomSource(s, 'konachan');
   assert.equal(getSources(s.state).length, 6);
   const c = addCustomSource(s, { name: 'Mine', type: 'github', categories: ['linux'], options: { repo: 'a/b' } });
@@ -57,8 +59,8 @@ test('sync: library, groups and per-device settings flow between devices', async
     phoneSync = new SyncManager(phone, { fetchImpl: fake });
     const g = createGroup(pc, 'anime');
     addToGroup(pc, wp(1), g.id);
-    await pcSync.authenticate('register', url, 'u@x.io', 'password123');
-    await phoneSync.authenticate('login', url, 'u@x.io', 'password123');
+    await pcSync.authenticate('register', 'u@x.io', 'password123', { username: 'ana', serverUrl: url });
+    await phoneSync.authenticate('login', 'u@x.io', 'password123', { serverUrl: url });
     assert.equal(getLibrary(phone.state).length, 1);
     assert.equal(getGroupWallpapers(phone.state, g.id).length, 1);
 
@@ -110,4 +112,179 @@ test('update check: version compare, platform pick, own-origin only', async () =
   assert.equal(app?.file.file, 'l.AppImage');
   manifest.files = [file('android', 'a.apk', 'https://evil.example/a.apk')];
   await assert.rejects(checkForUpdate(get, '0.1.0', 'android'));
+});
+
+test('sub-groups: parent shows children, delete cascades, names unique per level', async () => {
+  const s = await mk('pc', 'linux');
+  const anime = createGroup(s, 'Anime');
+  const naruto = createGroup(s, 'Naruto', { parentId: anime.id });
+  const bleach = createGroup(s, 'Bleach', { parentId: anime.id });
+  assert.equal(createGroup(s, 'naruto', { parentId: anime.id }).id, naruto.id);
+  assert.notEqual(createGroup(s, 'Naruto').id, naruto.id); // same name at another level is fine
+  addToGroup(s, wp(1), naruto.id);
+  addToGroup(s, wp(2), bleach.id);
+  addToGroup(s, wp(3), anime.id);
+  addToGroup(s, wp(4), 'all');
+  assert.deepEqual(getGroupWallpapers(s.state, naruto.id).map((w) => w.id), ['konachan:1']);
+  assert.equal(getGroupWallpapers(s.state, anime.id).length, 3);
+  assert.equal(getGroupWallpapers(s.state, 'all').length, 4);
+  assert.equal(getGroupCounts(s.state)[anime.id], 3);
+  assert.deepEqual(getGroupPath(s.state, naruto.id), ['Anime', 'Naruto']);
+  assert.equal(getGroupTree(s.state).find((n) => n.group.id === naruto.id)!.depth, 1);
+  assert.throws(() => renameGroup(s, bleach.id, 'Naruto'));
+  removeFromGroup(s, 'konachan:1', anime.id); // also leaves its sub-group
+  assert.equal(getGroupWallpapers(s.state, naruto.id).length, 0);
+  addToGroup(s, wp(1), naruto.id);
+  updateDeviceSettings(s, s.state.local.deviceId, { activeGroupId: naruto.id });
+  deleteGroup(s, anime.id);
+  assert.equal(getLibrary(s.state).length, 4);
+  assert.ok(!getGroupTree(s.state).some((n) => n.group.id === naruto.id || n.group.id === anime.id));
+  assert.equal((s.state.records[`deviceSettings/${s.state.local.deviceId}`].data as any).activeGroupId, 'all');
+});
+
+test('folder layout: tree uses sub folders, albums add root + every parent album', async () => {
+  const s = await mk('pc', 'linux');
+  const anime = createGroup(s, 'Anime');
+  const naruto = createGroup(s, 'Naruto', { parentId: anime.id });
+  addToGroup(s, wp(1), naruto.id);
+  const mkp = (folderLayout: PlatformActions['folderLayout']): PlatformActions => ({ folderLayout, download: async () => '', setWallpaper: async () => {} });
+  assert.deepEqual(folderDirs(s.state, mkp('tree'), 'konachan:1'), [['Anime', 'Naruto']]);
+  assert.deepEqual(folderDirs(s.state, mkp('albums'), 'konachan:1'), [[], ['Anime'], ['Anime', 'Naruto']]);
+  assert.deepEqual(folderDirs(s.state, mkp('tree'), 'konachan:99'), [[]]);
+});
+
+test('community: export a group tree and import it as a sub-group', async () => {
+  const a = await mk('a', 'linux');
+  const anime = createGroup(a, 'Anime', { category: 'anime' });
+  const naruto = createGroup(a, 'Naruto', { parentId: anime.id });
+  addToGroup(a, wp(1), naruto.id);
+  addToGroup(a, wp(2), anime.id);
+  const payload = buildCollection(a, anime.id);
+  assert.equal(payload.groups.length, 2);
+  assert.equal(payload.wallpapers.length, 2);
+  const b = await mk('b', 'android');
+  const mine = createGroup(b, 'Favs');
+  const rootId = importCollection(b, { name: 'Anime pack', category: 'anime', payload }, mine.id);
+  assert.deepEqual(getGroupPath(b.state, rootId), ['Favs', 'Anime pack']);
+  assert.equal(getGroupWallpapers(b.state, rootId).length, 2);
+  assert.equal(getGroupWallpapers(b.state, mine.id).length, 2);
+});
+
+test('cache: stale data is shown first and used when offline', async () => {
+  const s = await mk('pc', 'linux');
+  assert.deepEqual((await cachedFetch(s, 'k', async () => [1])).data, [1]);
+  const seen: number[][] = [];
+  const r = await cachedFetch(s, 'k', async () => { throw new Error('offline'); }, (d: number[]) => seen.push(d));
+  assert.deepEqual(r, { data: [1], offline: true });
+  assert.deepEqual(seen, [[1]]);
+  await assert.rejects(cachedFetch(s, 'other', async () => { throw new Error('offline'); }));
+  const b = new BrowseController(() => getSources(s.state), async () => { throw new Error('offline'); }, 'any', { category: 'anime' }, { get: () => [wp(7)], set: () => {} });
+  await b.reload();
+  assert.equal(b.state.items.length, 1); // remembered results stay visible offline
+  assert.ok(b.state.fromCache);
+});
+
+test('compat: orientation, variants, resolving for each device', async () => {
+  const { shapeOf, setVariant, getVariant, resolveForDevice, compatStatus, ensureDimensions, maxCrop, placeCrop, clearVariant } = await import('../src/index.ts');
+  const land = { ...wp(1), width: 1920, height: 1080 };
+  const port = { ...wp(2), width: 1080, height: 2340 };
+  assert.equal(shapeOf(land), 'landscape');
+  assert.equal(shapeOf(port), 'portrait');
+  assert.equal(shapeOf({ width: 1000, height: 1050 }), 'square');
+  assert.equal(shapeOf(wp(3)), 'unknown');
+
+  const s = await mk('pc', 'linux');
+  addToGroup(s, land, 'all');
+  // native orientation is always used as is
+  assert.equal(resolveForDevice(s.state, land, 'landscape', 'fill').fit, 'fill');
+  // mismatched and undecided: blurred background instead of a harsh crop (only when the user asked for fill)
+  assert.equal(resolveForDevice(s.state, land, 'portrait', 'fill').fit, 'blur');
+  assert.equal(resolveForDevice(s.state, land, 'portrait', 'fit').fit, 'fit');
+  assert.equal(compatStatus(s.state, land).state, 'none');
+
+  setVariant(s, land, { kind: 'crop', crop: { x: 0.3, y: 0, w: 0.3, h: 1 } });
+  assert.equal(getVariant(s.state, land.id)!.for, 'portrait');
+  const c = resolveForDevice(s.state, land, 'portrait', 'fill');
+  assert.deepEqual([c.fit, c.wallpaper.id, !!c.crop], ['fill', land.id, true]);
+  assert.equal(resolveForDevice(s.state, land, 'landscape', 'fill').crop, undefined); // PC keeps the original
+
+  setVariant(s, land, { kind: 'image', wallpaper: port });
+  assert.equal(resolveForDevice(s.state, land, 'portrait', 'fill').wallpaper.id, port.id);
+  assert.equal(compatStatus(s.state, land).state, 'image');
+  clearVariant(s, land.id);
+  assert.equal(compatStatus(s.state, land).state, 'none');
+
+  // step 1: measure unknown sizes once and keep them
+  addToGroup(s, wp(3), 'all');
+  const probed = await ensureDimensions(s, 'konachan:3', async () => ({ width: 800, height: 1600 }));
+  assert.deepEqual([probed!.width, probed!.height], [800, 1600]);
+  assert.equal(getLibrary(s.state).find((w) => w.id === 'konachan:3')!.height, 1600);
+
+  // crops: biggest crop has the target shape and stays inside the image
+  const m = maxCrop(1920, 1080, 'portrait');
+  assert.ok(Math.abs((m.w * 1920) / (m.h * 1080) - 9 / 19.5) < 0.001 && m.h === 1);
+  const p = placeCrop(1920, 1080, 'portrait', 0.99, 0.5, 0.5);
+  assert.ok(p.x + p.w <= 1 + 1e-9 && p.x >= 0);
+
+  // removing from the library also drops the choice
+  setVariant(s, land, { kind: 'blur' });
+  const { removeFromLibrary } = await import('../src/index.ts');
+  removeFromLibrary(s, land.id);
+  assert.equal(getVariant(s.state, land.id), undefined);
+});
+
+test('compat: similar images from each kind of source', async () => {
+  const { findAlternatives } = await import('../src/index.ts');
+  const s = await mk('pc', 'linux');
+  const calls: string[] = [];
+  const http = async (url: string) => {
+    calls.push(url);
+    if (url.includes('wallhaven.cc')) return { data: [{ id: 'zz1', path: 'https://w/zz1.jpg', thumbs: { large: 'https://w/t.jpg' }, dimension_x: 1080, dimension_y: 2000, url: 'https://w/zz1' }, { id: 'zz2', path: 'https://w/zz2.jpg', thumbs: {}, dimension_x: 2000, dimension_y: 1000 }], meta: { last_page: 1 } };
+    if (url.includes('konachan')) return [{ id: 9, file_url: 'https://k/9.jpg', sample_url: 'https://k/s9.jpg', width: 1200, height: 2400, tags: 'naruto uzumaki' }];
+    if (url.includes('tvmaze.com/shows/')) return [{ type: 'poster', resolutions: { original: { url: 'https://tv/p.jpg', width: 680, height: 1000 }, medium: { url: 'https://tv/pm.jpg' } } }, { type: 'background', resolutions: { original: { url: 'https://tv/b.jpg', width: 1280, height: 720 } } }];
+    return [];
+  };
+  // Wallhaven image: asks Wallhaven for "like:<id>" in the other orientation, drops wrong-shaped results
+  const wh = { id: 'wallhaven:abc12', sourceId: 'wallhaven', title: 'x', url: 'https://w/a.jpg', thumb: 'https://w/at.jpg', width: 1920, height: 1080 };
+  const a = await findAlternatives(s, http, wh, 'portrait');
+  assert.ok(calls.some((u) => u.includes('like%3Aabc12') && u.includes('portrait')));
+  assert.ok(a.some((x) => x.id === 'wallhaven:zz1') && !a.some((x) => x.id === 'wallhaven:zz2'));
+  // board image: keyword search
+  const kn = { id: 'konachan:5', sourceId: 'konachan', title: 'naruto uzumaki sky', url: 'https://k/5.jpg', thumb: 'https://k/s5.jpg', width: 3000, height: 1700 };
+  const b = await findAlternatives(s, http, kn, 'portrait');
+  assert.ok(b.some((x) => x.id === 'konachan:9'));
+  // TVmaze: the real counterpart
+  const tv = { id: 'tvmaze:77p', sourceId: 'tvmaze', title: 'Show', url: 'https://tv/p.jpg', thumb: 'https://tv/pm.jpg', width: 680, height: 1000 };
+  const t = await findAlternatives(s, http, tv, 'landscape');
+  assert.equal(t[0].url, 'https://tv/b.jpg');
+  // Picsum: same photo at another size
+  const pi = { id: 'picsum:237', sourceId: 'picsum', title: 'Photo', url: 'https://picsum.photos/id/237/3000/2000.jpg', thumb: 'x', width: 3000, height: 2000 };
+  const pp = await findAlternatives(s, http, pi, 'portrait');
+  assert.match(pp[0].url, /\/id\/237\/\d+\/2000\.jpg/);
+});
+
+test('compat: variants travel with shared collections; recommendations come from the server', async () => {
+  const { setVariant, getVariant, loadRecommendations, cachedRecommendations } = await import('../src/index.ts');
+  const a = await mk('a', 'linux');
+  const g = createGroup(a, 'Anime');
+  const w1 = { ...wp(1), width: 1920, height: 1080 };
+  addToGroup(a, w1, g.id);
+  setVariant(a, w1, { kind: 'blur' });
+  const payload = buildCollection(a, g.id);
+  assert.deepEqual(payload.wallpapers[0].other, { kind: 'blur' });
+  const b = await mk('b', 'android');
+  importCollection(b, { name: 'Pack', category: 'anime', payload });
+  assert.deepEqual(getVariant(b.state, w1.id)!.choice, { kind: 'blur' });
+
+  const doc = { updatedAt: 1, items: [{ id: 'anime-naruto', title: 'Naruto', category: 'anime', query: 'naruto', tag: 'naruto' }] };
+  const ok = (async () => new Response(JSON.stringify(doc))) as unknown as typeof fetch;
+  const seen: number[] = [];
+  const r1 = await loadRecommendations(b, (i) => seen.push(i.length), ok);
+  assert.deepEqual([r1.items.length, r1.offline], [1, false]);
+  const down = (async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+  const r2 = await loadRecommendations(b, (i) => seen.push(i.length), down);
+  assert.deepEqual([r2.items[0].title, r2.offline], ['Naruto', true]);
+  assert.equal(cachedRecommendations(b).length, 1);
+  const fresh = await mk('c', 'linux');
+  await assert.rejects(loadRecommendations(fresh, undefined, down));
 });

@@ -44,7 +44,7 @@ export function BrowseScreen() {
             returnKeyType="search"
             onSubmitEditing={() => void browse.setFilters({ query })}
           />
-          <Btn title="Go" kind="primary" onPress={() => void browse.setFilters({ query })} />
+          <Btn title="Search" icon="search" kind="primary" onPress={() => void browse.setFilters({ query })} />
         </View>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
@@ -54,6 +54,7 @@ export function BrowseScreen() {
             <Select label="Source" value={b.filters.sourceId} options={[{ value: 'all', label: 'All sources' }, ...sources.map((s) => ({ value: s.id, label: s.name }))]} onChange={(v) => void browse.setFilters({ sourceId: v })} />
           </View>
         </View>
+        {b.fromCache && <Text style={text.small}>Showing saved results{b.loading ? ' · refreshing…' : ' (offline)'}</Text>}
         {b.errors.map((e) => (
           <Text key={e.sourceId} style={text.warn}>{e.sourceName}: {e.message}</Text>
         ))}
@@ -69,7 +70,7 @@ export function BrowseScreen() {
         onEndReached={() => void browse.loadMore()}
         renderItem={({ item }) => <Tile w={item} width={tile} onOpen={() => setPreview(item)} onGroup={() => setGrouping(item)} />}
         ListEmptyComponent={
-          b.loading ? undefined : <Text style={[text.muted, { textAlign: 'center', padding: 40 }]}>No enabled source offers this category. Enable or add one in Sources.</Text>
+          b.loading ? undefined : <Text style={[text.muted, { textAlign: 'center', padding: 40 }]}>No enabled source offers this category. Turn one on in Settings › Sources.</Text>
         }
         ListFooterComponent={<Text style={[text.muted, { textAlign: 'center', padding: 16 }]}>{b.loading ? 'Loading…' : ''}</Text>}
       />

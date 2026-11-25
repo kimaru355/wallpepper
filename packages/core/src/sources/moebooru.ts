@@ -6,7 +6,8 @@ export async function fetchMoebooru(src: SourceConfig, p: BrowseParams, http: Ht
   const base = (src.options.baseUrl || '').replace(/\/$/, '');
   const tags = ['rating:safe'];
   if (src.options.extraTags) tags.push(src.options.extraTags);
-  if (p.query.trim()) tags.push(...p.query.trim().split(/\s+/).slice(0, 4));
+  if (p.tag) tags.push(p.tag);
+  else if (p.query.trim()) tags.push(...p.query.trim().split(/\s+/).slice(0, 4));
   if (p.sort === 'popular') tags.push('order:score');
   if (p.sort === 'random') tags.push('order:random');
   if (p.orientation === 'landscape') tags.push('width:1600..');
