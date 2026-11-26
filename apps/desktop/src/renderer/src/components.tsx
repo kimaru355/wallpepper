@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   addToGroup,
   ALL_GROUP_ID,
+  cardView,
   createGroup,
+  deviceShape,
   FIT_MODES,
   getDeviceSettings,
   getGroupPath,
@@ -10,8 +12,11 @@ import {
   getWallpaperGroupIds,
   ICON_PATHS,
   isSaved,
+  reapplyCurrent,
   removeFromGroup,
+  thumbOf,
   updateDeviceSettings,
+  type CardView,
   type DeviceSettings,
   type IconName,
   type Wallpaper,
@@ -41,10 +46,37 @@ export function IconButton({ icon, label, title, ...rest }: { icon: IconName; la
 }
 
 /** Image served from the on-disk cache, so it shows instantly and without a connection once seen. */
-export function CachedImg({ url, alt = '', className, onClick }: { url: string; alt?: string; className?: string; onClick?: () => void }) {
+export function CachedImg({ url, alt = '', className, onClick, style }: { url: string; alt?: string; className?: string; onClick?: () => void; style?: CSSProperties }) {
   const [failed, setFailed] = useState(false);
   if (failed) return <div className={'img-fail ' + (className ?? '')}><Icon name="image" size={28} /></div>;
-  return <img className={className} src={img(url)} loading="lazy" alt={alt} onClick={onClick} onError={() => setFailed(true)} />;
+  return <img className={className} style={style} src={img(url)} loading="lazy" alt={alt} onClick={onClick} onError={() => setFailed(true)} />;
+}
+
+/**
+ * Picture of a grid card: landscape pictures fill the card, portrait ones are shown whole over a blurred copy of
+ * themselves, and a saved crop shows just that region.
+ */
+export function CardImage({ view, alt = '', onClick }: { view: CardView; alt?: string; onClick?: () => void }) {
+  if (view.crop && view.aspect) {
+    const c = view.crop;
+    const r = view.aspect;
+    return (
+      <div className="card-crop" onClick={onClick}>
+        <div className="card-crop-box" style={{ width: `max(100cqw, calc(100cqh * ${r}))`, height: `max(100cqh, calc(100cqw / ${r}))` }}>
+          <CachedImg url={view.thumb} alt={alt} style={{ position: 'absolute', width: `${100 / c.w}%`, height: `${100 / c.h}%`, left: `${(-c.x / c.w) * 100}%`, top: `${(-c.y / c.h) * 100}%`, objectFit: 'fill' }} />
+        </div>
+      </div>
+    );
+  }
+  if (view.mode === 'blur') {
+    return (
+      <>
+        <CachedImg className="card-bg" url={view.thumb} />
+        <CachedImg className="card-fit" url={view.thumb} alt={alt} onClick={onClick} />
+      </>
+    );
+  }
+  return <CachedImg url={view.thumb} alt={alt} onClick={onClick} />;
 }
 
 export function Modal({ onClose, children, wide }: { onClose: () => void; children: ReactNode; wide?: boolean }) {
@@ -125,7 +157,7 @@ export function Preview({ wallpaper, onClose, onGroup }: { wallpaper: Wallpaper;
   return (
     <Modal onClose={onClose} wide>
       <div className="preview-wrap">
-        <CachedImg className="preview-img" url={wallpaper.thumb} alt="" />
+        <CachedImg className="preview-img" url={thumbOf(wallpaper)} alt="" />
         <CachedImg className="preview-img top" url={wallpaper.url} alt={wallpaper.title ?? ''} />
       </div>
       <div className="row between" style={{ marginTop: 12 }}>
@@ -142,8 +174,8 @@ export function Preview({ wallpaper, onClose, onGroup }: { wallpaper: Wallpaper;
         <div className="row wrap">
           <button className="primary ibtn" onClick={() => uiSet(wallpaper)}><Icon name="image" size={16} />Set wallpaper</button>
           {info.platform !== 'mac' && <button className="ibtn" onClick={() => uiSet(wallpaper, 'lock')}><Icon name="lock" size={16} />Lock screen</button>}
+          <button className="primary ibtn" onClick={onGroup}><Icon name="folderPlus" size={16} />Group</button>
           <IconButton icon="download" label="Download" onClick={() => uiDownload(wallpaper)} />
-          <IconButton icon="folderPlus" label="Group" onClick={onGroup} />
           {isSaved(state, wallpaper.id) && <IconButton icon="sliders" label="Check compatibility" onClick={() => openCompat(wallpaper)} />}
           <IconButton icon="close" label="Close" onClick={onClose} />
         </div>
@@ -153,14 +185,19 @@ export function Preview({ wallpaper, onClose, onGroup }: { wallpaper: Wallpaper;
 }
 
 export function WallpaperCard({
-  wallpaper, onOpen, onGroup, extra,
-}: { wallpaper: Wallpaper; onOpen: () => void; onGroup: () => void; extra?: ReactNode }) {
+  wallpaper, onOpen, onGroup, extra, asOnDevice,
+}: {
+  wallpaper: Wallpaper; onOpen: () => void; onGroup: () => void; extra?: ReactNode;
+  /** Show the version this device gets (its compatibility choice) instead of the original picture. */
+  asOnDevice?: boolean;
+}) {
   const state = useAppState();
   const saved = isSaved(state, wallpaper.id);
   const downloaded = !!state.local.downloads[wallpaper.id];
+  const view = cardView(wallpaper, deviceShape(getDeviceSettings(state)?.platform), asOnDevice ? state : undefined);
   return (
     <div className="card">
-      <CachedImg url={wallpaper.thumb} alt={wallpaper.title ?? ''} onClick={onOpen} />
+      <CardImage view={view} alt={wallpaper.title ?? ''} onClick={onOpen} />
       <div className="badges">
         {saved && <span title="In your library"><Icon name="star" size={12} /></span>}
         {downloaded && <span title="Downloaded on this device"><Icon name="download" size={12} /></span>}
@@ -168,7 +205,7 @@ export function WallpaperCard({
       <div className="card-actions">
         <button className="ibtn" title="Set as wallpaper" onClick={() => uiSet(wallpaper)}><Icon name="image" size={15} />Set</button>
         <IconButton icon="download" title="Download" onClick={() => uiDownload(wallpaper)} />
-        <IconButton icon="folderPlus" title="Add to group" onClick={onGroup} />
+        <IconButton icon="folderPlus" title="Add to group" className="accent" onClick={onGroup} />
         {extra}
       </div>
     </div>
@@ -181,10 +218,18 @@ export function WallpaperCard({
  */
 export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
   const state = useAppState();
-  const { store } = getCtx();
+  const { store, platform } = getCtx();
   const s = getDeviceSettings(state, deviceId);
   if (!s) return null;
   const set = (patch: Partial<DeviceSettings>) => updateDeviceSettings(store, deviceId, patch);
+  /** Changes that affect how the wallpaper looks are applied right away on this computer. */
+  const setNow = (patch: Partial<DeviceSettings>) => {
+    set(patch);
+    if (deviceId !== store.state.local.deviceId) return;
+    reapplyCurrent(store, platform)
+      .then((done) => done && toast('Applied to your wallpaper.', 'ok'))
+      .catch((e) => toast(e?.message ?? 'Could not apply the change', 'error'));
+  };
   const mobile = s.platform === 'android' || s.platform === 'ios';
   const fits = FIT_MODES.filter((f) => !(mobile && f.desktopOnly));
   const fit = fits.find((f) => f.id === (s.fit ?? 'fill')) ?? fits[0];
@@ -203,7 +248,7 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
         <>
           <label>
             Apply to
-            <select value={s.target} onChange={(e) => set({ target: e.target.value as DeviceSettings['target'] })}>
+            <select value={s.target} onChange={(e) => setNow({ target: e.target.value as DeviceSettings['target'] })}>
               <option value="both">{mobile ? 'Home & lock screen' : 'Desktop & lock screen'}</option>
               <option value="home">{mobile ? 'Home screen' : 'Desktop'} only</option>
               <option value="lock">Lock screen only</option>
@@ -211,7 +256,7 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
           </label>
           <label>
             Fit
-            <select value={fit.id} onChange={(e) => set({ fit: e.target.value as DeviceSettings['fit'] })}>
+            <select value={fit.id} onChange={(e) => setNow({ fit: e.target.value as DeviceSettings['fit'] })}>
               {fits.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
             </select>
             <span className="muted small">{fit.hint}</span>
@@ -223,16 +268,20 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
         Change the wallpaper automatically {s.mode === 'folder' ? <span className="muted small">(your system rotates the folder; Wallpepper keeps it filled)</span> : <span className="muted small">(off = keep the one you set)</span>}
       </label>
       {!mobile && s.mode === 'apply' && (
-        <label className="check">
-          <input type="checkbox" checked={s.perDisplay !== false} onChange={(e) => set({ perDisplay: e.target.checked })} />
-          A different wallpaper on each display <span className="muted small">(when this computer has several; not with Span)</span>
+        <label>
+          Several displays
+          <select value={s.perDisplay === false ? 'same' : 'different'} onChange={(e) => setNow({ perDisplay: e.target.value === 'different' })}>
+            <option value="different">A different wallpaper on each display</option>
+            <option value="same">The same wallpaper on every display</option>
+          </select>
+          <span className="muted small">Used by automatic changes and “Change wallpaper”. “Set wallpaper” always puts that one picture on every display. Not used with Span.</span>
         </label>
       )}
       {s.rotationEnabled && s.mode === 'apply' && (
         <div className="row">
           <label>Every
             <select value={s.rotationMinutes} onChange={(e) => set({ rotationMinutes: Number(e.target.value) })}>
-              {[5, 15, 30, 60, 180, 360, 720, 1440].map((m) => <option key={m} value={m}>{m >= 60 ? `${m / 60} h` : `${m} min`}</option>)}
+              {(mobile ? [15, 30, 60, 180, 360, 720, 1440] : [1, 5, 15, 30, 60, 180, 360, 720, 1440]).map((m) => <option key={m} value={m}>{m >= 60 ? `${m / 60} h` : `${m} min`}</option>)}
             </select>
           </label>
           <label>Order

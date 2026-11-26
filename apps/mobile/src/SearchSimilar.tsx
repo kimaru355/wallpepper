@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ImageStyle } from 'react-native';
-import { CATEGORIES, searchSeed, type CategoryId, type Shape, type Wallpaper } from '@wallpepper/core';
+import { CATEGORIES, searchSeed, thumbOf, type CategoryId, type Shape, type Wallpaper } from '@wallpepper/core';
 import { CachedImage } from './CachedImage';
 import { makeBrowse, useAppState, useBrowseOf } from './ctx';
 import { useInsets } from './insets';
@@ -44,7 +44,7 @@ export function SearchSimilar({ w, target, onCancel, onPick }: { w: Wallpaper; t
             <Text style={text.small}>Only {target} pictures are shown, so what you pick fits {WHERE[target]}.</Text>
           </View>
           <View style={[s.orig, { aspectRatio: target === 'portrait' ? 16 / 9 : 9 / 16, height: 44 }]}>
-            <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} />
+            <CachedImage uri={thumbOf(w)} style={StyleSheet.absoluteFill as ImageStyle} />
           </View>
         </View>
 
@@ -85,7 +85,7 @@ export function SearchSimilar({ w, target, onCancel, onPick }: { w: Wallpaper; t
               onPress={() => setPicked(picked?.id === item.id ? null : item)}
               style={[s.cell, { width: tile, aspectRatio: target === 'portrait' ? 9 / 16 : 16 / 9 }, picked?.id === item.id && { borderColor: colors.accent }]}
             >
-              <CachedImage uri={item.thumb} style={StyleSheet.absoluteFill as ImageStyle} />
+              <CachedImage uri={thumbOf(item)} style={StyleSheet.absoluteFill as ImageStyle} />
               {picked?.id === item.id && <View style={s.tick}><Icon name="check" size={14} color="#fff" /></View>}
             </Pressable>
           )}

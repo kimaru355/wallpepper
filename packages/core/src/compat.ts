@@ -116,6 +116,46 @@ export function resolveForThisDevice(state: State, w: Wallpaper): Resolved {
   return resolveForDevice(state, w, deviceShape(s?.platform), s?.fit ?? 'fill');
 }
 
+// ---------------------------------------------------------------- grid cards
+
+/** Thumbnail that keeps the picture's shape (Wallhaven 'lg' / 'small' thumbs, saved by older versions, are 3:2 crops). */
+export function thumbOf(w: Wallpaper): string {
+  return (w.thumb || w.url).replace(/^(https:\/\/th\.wallhaven\.cc\/)(?:lg|small)\//, '$1orig/');
+}
+
+export interface CardView {
+  thumb: string;
+  /** 'cover' fills the card; 'blur' shows the whole picture over a blurred copy of itself. */
+  mode: 'cover' | 'blur';
+  /** Show only this region (the user's crop), scaled to cover the card. */
+  crop?: Crop;
+  /** Width / height of the crop in pixels. */
+  aspect?: number;
+}
+
+/**
+ * How a grid card on a device of shape `device` shows a wallpaper: pictures of the device's shape fill the card, the
+ * others are shown whole over a blurred copy. With `state` the user's compatibility choice is used, so the card shows
+ * the version this device actually gets (the other image, the crop, or the blurred background).
+ */
+export function cardView(w: Wallpaper, device: Shape, state?: State): CardView {
+  if (state) {
+    const r = resolveForDevice(state, w, device, 'fill');
+    if (r.crop && w.width && w.height) return { thumb: thumbOf(w), mode: 'cover', crop: r.crop, aspect: (r.crop.w * w.width) / (r.crop.h * w.height) };
+    if (r.wallpaper.id !== w.id) return cardView(r.wallpaper, device);
+  }
+  const shape = shapeOf(w);
+  return { thumb: thumbOf(w), mode: shape === device || shape === 'square' ? 'cover' : 'blur' };
+}
+
+/** Saved wallpapers that have no version for the other orientation yet (or whose size is still unknown). */
+export function needsCompat(state: State, items: Wallpaper[]): Wallpaper[] {
+  return items.filter((w) => {
+    const s = compatStatus(state, w).state;
+    return s === 'none' || s === 'unknown';
+  });
+}
+
 // ---------------------------------------------------------------- step 1: know the size
 
 /** Reads the pixel size of an image URL (provided by the app: <img> on desktop, Image.getSize on the phone). */

@@ -8,6 +8,7 @@ interface Show {
   url?: string;
   image?: { original?: string; medium?: string } | null;
   rating?: { average?: number | null };
+  type?: string;
 }
 
 /** Landscape: TVmaze only has backgrounds on a per-show endpoint, so a page costs a few extra small requests. */
@@ -38,7 +39,7 @@ export async function fetchTvmaze(src: SourceConfig, p: BrowseParams, http: Http
     } catch {
       list = [];
     }
-    shows = list.filter((s) => s.image?.original);
+    shows = list.filter((s) => s.image?.original && (p.category !== 'animation' || s.type === 'Animation'));
     if (p.sort === 'popular') shows.sort((a, b) => (b.rating?.average ?? 0) - (a.rating?.average ?? 0));
     else shows.sort((a, b) => b.id - a.id);
     shows = shows.slice(0, 40);
@@ -46,6 +47,8 @@ export async function fetchTvmaze(src: SourceConfig, p: BrowseParams, http: Http
     if (p.page > 12) nextPage = null;
   }
   shows = shows.filter((s) => s.image?.original);
+  // Animation category: animated series only (TVmaze marks them with type 'Animation')
+  if (p.category === 'animation') shows = shows.filter((s) => s.type === 'Animation');
   const portrait = p.orientation === 'portrait';
   const items: Wallpaper[] = [];
   if (portrait || p.orientation === 'any') {

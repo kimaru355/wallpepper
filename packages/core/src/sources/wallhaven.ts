@@ -2,9 +2,12 @@
 import type { BrowseParams, CategoryId, Http, Page, SourceConfig, Wallpaper } from '../types.ts';
 import { qs } from './util.ts';
 
-const CATEGORY_QUERY: Record<string, { q: string; categories?: string }> = {
+/** `own`: a typed search replaces the category word instead of narrowing it ("frozen" rather than "animation frozen"). */
+const CATEGORY_QUERY: Record<string, { q: string; categories?: string; own?: boolean }> = {
   anime: { q: '', categories: '010' },
   movies: { q: 'movie' },
+  // animated films and series (Frozen, Pixar, ...): the General category, so anime stays out
+  animation: { q: 'animation', categories: '100', own: true },
   linux: { q: 'linux' },
   tech: { q: 'technology' },
   nature: { q: 'nature' },
@@ -20,7 +23,7 @@ export function wallhavenQuery(category: CategoryId | 'all') {
 
 export async function fetchWallhaven(src: SourceConfig, p: BrowseParams, http: Http): Promise<Page> {
   const cat = wallhavenQuery(p.category);
-  const q = [cat.q, p.query.trim()].filter(Boolean).join(' ');
+  const q = cat.own && p.query.trim() ? p.query.trim() : [cat.q, p.query.trim()].filter(Boolean).join(' ');
   const sorting = p.sort === 'popular' ? 'toplist' : p.sort === 'random' ? 'random' : 'date_added';
   const url =
     'https://wallhaven.cc/api/v1/search?' +
@@ -40,7 +43,8 @@ export async function fetchWallhaven(src: SourceConfig, p: BrowseParams, http: H
     sourceId: src.id,
     title: q || 'Wallhaven',
     url: d.path,
-    thumb: d.thumbs?.large || d.thumbs?.small,
+    // 'original' keeps the picture's shape; 'large' / 'small' are 3:2 crops that cut portraits
+    thumb: d.thumbs?.original || d.thumbs?.large || d.thumbs?.small,
     width: d.dimension_x,
     height: d.dimension_y,
     pageUrl: d.url,

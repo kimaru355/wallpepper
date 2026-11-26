@@ -12,6 +12,7 @@ import {
   placeCrop,
   setVariant,
   shapeOf,
+  thumbOf,
   type Crop,
   type Shape,
   type Wallpaper,
@@ -125,8 +126,8 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
     <Modal onClose={onClose} wide>
       <h3 style={{ marginTop: 0 }}>Compatibility</h3>
       <div className="row" style={{ alignItems: 'flex-start', gap: 14 }}>
-        <div className={'compat-thumb ' + (shape === 'portrait' ? 'portrait' : 'landscape')}><CachedImg url={w.thumb} /></div>
-        {chosen && need && <div className={'compat-thumb ' + need}><CachedImg url={chosen.thumb} /></div>}
+        <div className={'compat-thumb ' + (shape === 'portrait' ? 'portrait' : 'landscape')}><CachedImg url={thumbOf(w)} /></div>
+        {chosen && need && <div className={'compat-thumb ' + need}><CachedImg url={thumbOf(chosen)} /></div>}
         <div>
           <strong>{shape === 'unknown' ? 'Checking the size…' : shape === 'square' ? 'Square image' : `A ${shape} image`}</strong>
           {w.width && w.height ? <div className="muted small">{w.width}×{w.height}</div> : null}
@@ -207,7 +208,7 @@ function SearchSimilar({ w, target, onCancel, onPick }: { w: Wallpaper; target: 
             <div className="muted small">Only {target} pictures are shown, so whatever you pick fits {WHERE[target]}.</div>
           </div>
         </div>
-        <div className={'compat-thumb ' + (target === 'portrait' ? 'landscape' : 'portrait')} title="The picture you are replacing"><CachedImg url={w.thumb} /></div>
+        <div className={'compat-thumb ' + (target === 'portrait' ? 'landscape' : 'portrait')} title="The picture you are replacing"><CachedImg url={thumbOf(w)} /></div>
       </div>
       <div className="chips" style={{ marginBottom: 8 }}>
         {CATEGORIES.map((c) => (
@@ -224,7 +225,7 @@ function SearchSimilar({ w, target, onCancel, onPick }: { w: Wallpaper; target: 
         <div className={'alts ' + target}>
           {b.items.map((a) => (
             <button key={a.id} className={'alt' + (picked?.id === a.id ? ' on' : '')} onClick={() => setPicked(picked?.id === a.id ? null : a)} onDoubleClick={() => onPick(a)}>
-              <CachedImg url={a.thumb} />
+              <CachedImg url={thumbOf(a)} />
               {picked?.id === a.id && <span className="tick"><Icon name="check" size={14} /></span>}
             </button>
           ))}
@@ -273,7 +274,7 @@ function CropEditor({ w, target, initial, onCancel, onSave }: { w: Wallpaper; ta
       <p className="muted small">Drag the frame over the part you want. The frame has the shape of a {target} screen. Use the slider to make the frame smaller or bigger.</p>
       <div className="crop-stage">
         <div ref={boxRef} className="crop-box" style={{ aspectRatio: `${iw} / ${ih}` }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-          <CachedImg url={w.thumb} />
+          <CachedImg url={thumbOf(w)} />
           <div className="crop-frame" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${crop.h * 100}%` }} />
         </div>
       </div>

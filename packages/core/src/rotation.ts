@@ -86,7 +86,7 @@ export async function applyWallpaper(
   const r = resolveForThisDevice(store.state, w);
   await platform.setWallpaper(r.wallpaper, target ?? s.target, r.fit, r.crop);
   saveToLibrary(store, w);
-  store.setLocal({ rotation: { lastWallpaperId: w.id, lastAt: Date.now() } });
+  store.setLocal({ rotation: { lastWallpaperId: w.id, lastAt: Date.now(), current: [w.id] } });
   return 'applied';
 }
 
@@ -125,24 +125,61 @@ export function pickNextMany(store: Store, n: number): LibraryItem[] {
   return Array.from({ length: n }, (_, k) => order[k % order.length]);
 }
 
+/** Displays that should each get their own wallpaper (1 = the same picture everywhere). */
+async function differentDisplays(store: Store, platform: PlatformActions): Promise<number> {
+  const s = getDeviceSettings(store.state);
+  if (s.mode === 'folder' || s.perDisplay === false || s.fit === 'span' || !platform.displays || !platform.setWallpapers) return 1;
+  return platform.displays().catch(() => 1);
+}
+
+/**
+ * Shows the current wallpaper(s) again with the device's current settings, so a change of fit, target or
+ * "same / different on each display" takes effect right away. Returns false when nothing was set yet.
+ */
+export async function reapplyCurrent(store: Store, platform: PlatformActions): Promise<boolean> {
+  const s = getDeviceSettings(store.state);
+  if (s.mode === 'folder') return false;
+  const rot = store.state.local.rotation;
+  const lib = new Map(getGroupWallpapers(store.state, ALL_GROUP_ID).map((w) => [w.id, w]));
+  const ids = rot.current?.length ? rot.current : rot.lastWallpaperId ? [rot.lastWallpaperId] : [];
+  const items = ids.map((id) => lib.get(id)).filter((w): w is LibraryItem => !!w);
+  if (!items.length) return false;
+  const n = await differentDisplays(store, platform);
+  if (n > 1) {
+    // not enough pictures for every display yet: pick new ones
+    if (items.length < n) return (await rotateNow(store, platform)) !== null;
+    await platform.setWallpapers!(
+      items.slice(0, n).map((w) => {
+        const r = resolveForThisDevice(store.state, w);
+        return { w: r.wallpaper, fit: r.fit, crop: r.crop };
+      }),
+      s.target,
+    );
+    return true;
+  }
+  const lastAt = rot.lastAt;
+  await applyWallpaper(store, platform, items[0]);
+  // re-applying is not a rotation: keep the schedule where it was
+  store.setLocal({ rotation: { ...store.state.local.rotation, lastAt } });
+  return true;
+}
+
 export async function rotateNow(store: Store, platform: PlatformActions): Promise<LibraryItem | null> {
   const s = getDeviceSettings(store.state);
-  // Several displays: a different wallpaper on each one.
-  if (s.mode !== 'folder' && s.perDisplay !== false && s.fit !== 'span' && platform.displays && platform.setWallpapers) {
-    const n = await platform.displays().catch(() => 1);
-    if (n > 1) {
-      const picks = pickNextMany(store, n);
-      if (!picks.length) return null;
-      await platform.setWallpapers(
-        picks.map((w) => {
-          const r = resolveForThisDevice(store.state, w);
-          return { w: r.wallpaper, fit: r.fit, crop: r.crop };
-        }),
-        s.target,
-      );
-      store.setLocal({ rotation: { lastWallpaperId: picks[picks.length - 1].id, lastAt: Date.now() } });
-      return picks[0];
-    }
+  // Several displays: a different wallpaper on each one (unless the device wants the same one everywhere).
+  const n = await differentDisplays(store, platform);
+  if (n > 1) {
+    const picks = pickNextMany(store, n);
+    if (!picks.length) return null;
+    await platform.setWallpapers!(
+      picks.map((w) => {
+        const r = resolveForThisDevice(store.state, w);
+        return { w: r.wallpaper, fit: r.fit, crop: r.crop };
+      }),
+      s.target,
+    );
+    store.setLocal({ rotation: { lastWallpaperId: picks[picks.length - 1].id, lastAt: Date.now(), current: picks.map((p) => p.id) } });
+    return picks[0];
   }
   const next = pickNext(store);
   if (!next) return null;

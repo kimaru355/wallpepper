@@ -10,6 +10,7 @@ export interface Category {
 export const CATEGORIES: Category[] = [
   { id: 'anime', label: 'Anime', main: true },
   { id: 'movies', label: 'Movies & Series', main: true },
+  { id: 'animation', label: 'Animation', main: true },
   { id: 'linux', label: 'Linux', main: true },
   { id: 'tech', label: 'Tech', main: false },
   { id: 'nature', label: 'Nature', main: false },
@@ -155,7 +156,8 @@ export interface LocalState {
   downloads: Record<string, string>;
   /** sourceId -> secret options such as apiKey (never synced). */
   secrets: Record<string, Record<string, string>>;
-  rotation: { lastWallpaperId: string | null; lastAt: number };
+  /** `current`: what is on the screen(s) now, one id per display (used to re-apply when settings change). */
+  rotation: { lastWallpaperId: string | null; lastAt: number; current?: string[] };
   lastSyncAt: number;
   /** False until the first-run onboarding was completed. */
   onboarded: boolean;

@@ -4,7 +4,9 @@ import {
   addToGroup,
   ALL_GROUP_ID,
   applyWallpaper,
+  cardView,
   createGroup,
+  deviceShape,
   downloadWallpaper,
   FIT_MODES,
   getDeviceSettings,
@@ -12,8 +14,11 @@ import {
   getGroupTree,
   getWallpaperGroupIds,
   isSaved,
+  reapplyCurrent,
   removeFromGroup,
+  thumbOf,
   updateDeviceSettings,
+  type CardView,
   type DeviceSettings,
   type Wallpaper,
   type WallpaperTarget,
@@ -47,17 +52,42 @@ export async function doDownload(w: Wallpaper) {
   }
 }
 
-/** Grid tile with quick actions. */
-export function Tile({ w, width, onOpen, onGroup }: { w: Wallpaper; width: number; onOpen: () => void; onGroup: () => void }) {
+/**
+ * Picture of a grid tile (width × 16:9 height): portrait pictures cover the tile, landscape ones are shown whole over a
+ * blurred copy of themselves, and a saved crop shows just that region.
+ */
+export function TileImage({ v, width, height }: { v: CardView; width: number; height: number }) {
+  if (v.crop && v.aspect) {
+    const c = v.crop;
+    const bw = Math.max(width, height * v.aspect);
+    const bh = Math.max(height, width / v.aspect);
+    return (
+      <View style={{ position: 'absolute', left: (width - bw) / 2, top: (height - bh) / 2, width: bw, height: bh, overflow: 'hidden' }}>
+        <CachedImage uri={v.thumb} resizeMode="stretch" style={{ position: 'absolute', width: bw / c.w, height: bh / c.h, left: (-c.x / c.w) * bw, top: (-c.y / c.h) * bh }} />
+      </View>
+    );
+  }
+  if (v.mode === 'blur') {
+    return (
+      <>
+        <CachedImage uri={v.thumb} style={StyleSheet.absoluteFill as ImageStyle} blurRadius={18} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,.25)' }]} />
+        <CachedImage uri={v.thumb} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
+      </>
+    );
+  }
+  return <CachedImage uri={v.thumb} style={StyleSheet.absoluteFill as ImageStyle} />;
+}
+
+/** Grid tile with quick actions. `asOnDevice`: show the version this phone gets (its compatibility choice). */
+export function Tile({ w, width, onOpen, onGroup, asOnDevice }: { w: Wallpaper; width: number; onOpen: () => void; onGroup: () => void; asOnDevice?: boolean }) {
   const state = useAppState();
   const saved = isSaved(state, w.id);
+  const v = cardView(w, deviceShape(getDeviceSettings(state)?.platform), asOnDevice ? state : undefined);
   return (
     <View style={{ width, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.panel }}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onOpen}>
-        {/* the whole picture, fitted, over a blurred copy of itself: a landscape image is not cropped to a sliver */}
-        <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} blurRadius={18} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,.25)' }]} />
-        <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
+        <TileImage v={v} width={width} height={(width * 16) / 9} />
       </Pressable>
       {saved && (
         <View style={t.star}>
@@ -66,7 +96,7 @@ export function Tile({ w, width, onOpen, onGroup }: { w: Wallpaper; width: numbe
       )}
       <View style={t.actions}>
         <IconBtn name="download" label="Download" onPress={() => doDownload(w)} />
-        <IconBtn name="folderPlus" label="Add to group" onPress={onGroup} />
+        <IconBtn name="folderPlus" label="Add to group" onPress={onGroup} style={{ backgroundColor: colors.accent }} />
       </View>
     </View>
   );
@@ -82,7 +112,7 @@ export function PreviewModal({ w, onClose, onGroup }: { w: Wallpaper | null; onC
       <View style={{ flex: 1, backgroundColor: '#000', paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={{ flex: 1 }}>
           {/* thumbnail first (usually cached), then the full image on top of it */}
-          <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
+          <CachedImage uri={thumbOf(w)} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
           <CachedImage uri={w.url} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
           <IconBtn name="close" label="Close" onPress={onClose} size={20} style={{ position: 'absolute', top: 10, right: 12 }} />
         </View>
@@ -103,8 +133,8 @@ export function PreviewModal({ w, onClose, onGroup }: { w: Wallpaper | null; onC
           </View>
         )}
         <View style={[t.bar, { paddingTop: 0 }]}>
+          <Btn title="Group" icon="folderPlus" kind="primary" onPress={onGroup} style={{ flex: 1 }} />
           <Btn title="Download" icon="download" onPress={() => doDownload(w)} style={{ flex: 1 }} />
-          <Btn title="Group" icon="folderPlus" onPress={onGroup} style={{ flex: 1 }} />
           <Btn title="Close" icon="close" onPress={onClose} style={{ flex: 1 }} />
         </View>
       </View>
@@ -172,6 +202,14 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
   const s = getDeviceSettings(state, deviceId);
   if (!s) return null;
   const set = (patch: Partial<DeviceSettings>) => updateDeviceSettings(store, deviceId, patch);
+  /** Changes that affect how the wallpaper looks are applied right away on this phone. */
+  const setNow = (patch: Partial<DeviceSettings>) => {
+    set(patch);
+    if (deviceId !== store.state.local.deviceId) return;
+    reapplyCurrent(store, platform)
+      .then((done) => done && toast('Applied to your wallpaper'))
+      .catch((e) => toast(e?.message ?? 'Could not apply the change'));
+  };
   const mobile = s.platform === 'android' || s.platform === 'ios';
   const fits = FIT_MODES.filter((f) => !(mobile && f.desktopOnly));
   const fit = fits.find((f) => f.id === (s.fit ?? 'fill')) ?? fits[0];
@@ -198,12 +236,12 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
                 { value: 'home', label: mobile ? 'Home' : 'Desktop' },
                 { value: 'lock', label: 'Lock' },
               ]}
-              onChange={(v) => set({ target: v })}
+              onChange={(v) => setNow({ target: v })}
             />
           </View>
           <Text style={[text.small, { marginTop: 6 }]}>Fit</Text>
           <View style={{ marginVertical: 6 }}>
-            <Segmented value={fit.id} options={fits.map((f) => ({ value: f.id, label: f.label }))} onChange={(v) => set({ fit: v })} />
+            <Segmented value={fit.id} options={fits.map((f) => ({ value: f.id, label: f.label }))} onChange={(v) => setNow({ fit: v })} />
             <Text style={[text.small, { marginTop: 6 }]}>{fit.hint}</Text>
           </View>
         </>
@@ -214,12 +252,25 @@ export function DeviceSettingsForm({ deviceId }: { deviceId: string }) {
         value={s.rotationEnabled}
         onChange={(v) => set({ rotationEnabled: v })}
       />
+      {!mobile && s.mode === 'apply' && (
+        <>
+          <Text style={[text.small, { marginTop: 6 }]}>Several displays</Text>
+          <View style={{ marginVertical: 6 }}>
+            <Segmented
+              value={s.perDisplay === false ? 'same' : 'different'}
+              options={[{ value: 'different', label: 'Different on each' }, { value: 'same', label: 'Same on all' }]}
+              onChange={(v) => set({ perDisplay: v === 'different' })}
+            />
+            <Text style={[text.small, { marginTop: 6 }]}>Used by automatic changes and “Change wallpaper”. “Set wallpaper” always puts that one picture on every display.</Text>
+          </View>
+        </>
+      )}
       {s.rotationEnabled && s.mode === 'apply' && (
         <>
           <Select
             label="Every"
             value={String(s.rotationMinutes)}
-            options={[15, 30, 60, 180, 360, 720, 1440].map((m) => ({ value: String(m), label: m >= 60 ? `${m / 60} h` : `${m} min` }))}
+            options={(mobile ? [15, 30, 60, 180, 360, 720, 1440] : [1, 5, 15, 30, 60, 180, 360, 720, 1440]).map((m) => ({ value: String(m), label: m >= 60 ? `${m / 60} h` : `${m} min` }))}
             onChange={(v) => set({ rotationMinutes: Number(v) })}
           />
           <Select

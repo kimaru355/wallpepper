@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CATEGORIES, getSources, sourceSupports, type Sort, type Wallpaper } from '@wallpepper/core';
+import { CATEGORIES, getSources, sourceSupports, type Orientation, type Sort, type Wallpaper } from '@wallpepper/core';
 import { getCtx } from '../ctx';
 import { GroupDialog, Icon, Preview, WallpaperCard } from '../components';
 import { useAppState, useBrowse } from '../hooks';
@@ -60,6 +60,11 @@ export function Browse() {
             <option value="latest">Latest</option>
             <option value="popular">Popular</option>
             <option value="random">Random</option>
+          </select>
+          <select title="Orientation" value={b.orientation} onChange={(e) => browse.setOrientation(e.target.value as Orientation)}>
+            <option value="any">All orientations</option>
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
           </select>
           <select value={b.filters.sourceId} onChange={(e) => void browse.setFilters({ sourceId: e.target.value })}>
             <option value="all">All sources</option>

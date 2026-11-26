@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ALL_GROUP_ID,
   createGroup,
   deleteGroup,
+  ensureDimensions,
   folderForGroup,
   getDeviceSettings,
   getGroupCounts,
@@ -11,14 +12,18 @@ import {
   getGroupSubtreeIds,
   getGroupTree,
   getGroupWallpapers,
+  needsCompat,
   removeFromGroup,
+  shapeOf,
   renameGroup,
   rotateNow,
   updateDeviceSettings,
   type Wallpaper,
 } from '@wallpepper/core';
+import { openCompat } from '../compat';
 import { getCtx } from '../ctx';
 import { GroupDialog, Icon, IconButton, Preview, WallpaperCard } from '../components';
+import { probeImage } from '../render';
 import { useAppState } from '../hooks';
 import { toast } from '../toast';
 import { ShareDialog } from './Home';
@@ -32,6 +37,7 @@ export function Library() {
   const [preview, setPreview] = useState<Wallpaper | null>(null);
   const [grouping, setGrouping] = useState<Wallpaper | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [fixing, setFixing] = useState(false);
 
   const groups = getGroups(state);
   const counts = getGroupCounts(state);
@@ -41,6 +47,7 @@ export function Library() {
   const settings = getDeviceSettings(state);
   const active = settings.activeGroupId === current;
   const path = group ? getGroupPath(state, group.id) : [];
+  const pending = needsCompat(state, getGroupWallpapers(state, ALL_GROUP_ID));
   const folder = [state.local.folderPath, ...folderForGroup(state, current)].join(/\\/.test(state.local.folderPath) ? '\\' : '/');
 
   const create = () => {
@@ -52,6 +59,8 @@ export function Library() {
       toast(e.message, 'error');
     }
   };
+
+  if (fixing) return <FixCompat onBack={() => setFixing(false)} />;
 
   return (
     <div className="page split">
@@ -110,6 +119,15 @@ export function Library() {
             )}
           </div>
         </div>
+        {pending.length > 0 && (
+          <div className="notice row between wrap">
+            <span>
+              <Icon name="sliders" size={14} /> {pending.length} wallpaper{pending.length === 1 ? ' has' : 's have'} no version for the other screen shape yet
+              (phones are portrait, computers landscape).
+            </span>
+            <button className="primary ibtn" onClick={() => setFixing(true)}><Icon name="chevronRight" size={16} />Review &amp; fix</button>
+          </div>
+        )}
         {settings.mode === 'folder' && (
           <div className="notice">Your system changes the wallpaper. Point its slideshow at <code>{folder}</code> to use exactly this selection.</div>
         )}
@@ -128,6 +146,7 @@ export function Library() {
               wallpaper={w}
               onOpen={() => setPreview(w)}
               onGroup={() => setGrouping(w)}
+              asOnDevice
               extra={
                 <button className="danger ibtn" title={current === ALL_GROUP_ID ? 'Remove from library' : 'Remove from group'} onClick={() => removeFromGroup(store, w.id, current)}><Icon name="close" size={15} /></button>
               }
@@ -139,6 +158,51 @@ export function Library() {
       {preview && <Preview wallpaper={preview} onClose={() => setPreview(null)} onGroup={() => setGrouping(preview)} />}
       {grouping && <GroupDialog wallpaper={grouping} onClose={() => setGrouping(null)} />}
       {sharing && group && <ShareDialog groupId={group.id} onClose={() => setSharing(false)} />}
+    </div>
+  );
+}
+
+/** Saved wallpapers without a version for the other orientation, each with a button that opens the compatibility dialog. */
+function FixCompat({ onBack }: { onBack: () => void }) {
+  const state = useAppState();
+  const { store } = getCtx();
+  const items = needsCompat(state, getGroupWallpapers(state, ALL_GROUP_ID));
+  const [preview, setPreview] = useState<Wallpaper | null>(null);
+  const [grouping, setGrouping] = useState<Wallpaper | null>(null);
+
+  // pictures whose size the source did not send: measure them, square ones then drop off the list
+  useEffect(() => {
+    for (const w of items) if (shapeOf(w) === 'unknown') void ensureDimensions(store, w.id, probeImage);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="page narrow">
+      <button className="ibtn" style={{ marginBottom: 12 }} onClick={onBack}><Icon name="chevronLeft" size={16} />Library</button>
+      <h2 style={{ marginTop: 0 }}>Compatibility <span className="muted small">{items.length} to fix</span></h2>
+      <p className="muted small">
+        These wallpapers only suit one screen shape. Choose how each should look on the other one: another picture of the same
+        thing, a crop, or the whole picture on a blurred background. Until then the blurred background is used.
+      </p>
+      {!items.length && <div className="empty">All set: every wallpaper has a version for phones and for computers.</div>}
+      <div className="fix-list">
+        {items.map((w) => {
+          const shape = shapeOf(w);
+          return (
+            <div key={w.id} className="fix-row">
+              <WallpaperCard wallpaper={w} onOpen={() => setPreview(w)} onGroup={() => setGrouping(w)} />
+              <div className="grow">
+                <div>{w.title ?? 'Wallpaper'}</div>
+                <div className="muted small">
+                  {shape === 'unknown' ? 'Size not known yet' : `${shape === 'portrait' ? 'Portrait' : 'Landscape'} · needs a version for ${shape === 'portrait' ? 'computers' : 'phones'}`}
+                </div>
+              </div>
+              <button className="primary ibtn" onClick={() => openCompat(w)}><Icon name="sliders" size={16} />Fix</button>
+            </div>
+          );
+        })}
+      </div>
+      {preview && <Preview wallpaper={preview} onClose={() => setPreview(null)} onGroup={() => setGrouping(preview)} />}
+      {grouping && <GroupDialog wallpaper={grouping} onClose={() => setGrouping(null)} />}
     </div>
   );
 }

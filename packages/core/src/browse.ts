@@ -26,6 +26,8 @@ export interface BrowseState {
   filters: BrowseFilters;
   /** Showing remembered results; a refresh is running (or failed: you are offline). */
   fromCache: boolean;
+  /** Picture shape filter ('any' = all). */
+  orientation: Orientation;
 }
 
 /**
@@ -56,6 +58,7 @@ export class BrowseController {
       hasMore: true,
       errors: [],
       fromCache: false,
+      orientation,
       filters: { category: 'anime', query: '', sort: 'latest', sourceId: 'all', ...filters },
     };
   }
@@ -73,6 +76,7 @@ export class BrowseController {
   setOrientation(o: Orientation) {
     if (o !== this.orientation) {
       this.orientation = o;
+      this.state = { ...this.state, orientation: o };
       void this.reload();
     }
   }

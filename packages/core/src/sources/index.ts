@@ -10,6 +10,7 @@ import { fetchWallhaven } from './wallhaven.ts';
  * The six built-in sources (none needs an account or API key). They can be disabled but never removed.
  *  anime  : Konachan, Yande.re
  *  movies : TVmaze (series posters/backgrounds), Wallhaven (also tech/nature/space/games...)
+ *  animation: Wallhaven (animated films), TVmaze (animated series)
  *  linux  : GitHub wallpaper repo
  *  other  : Picsum photography
  */
@@ -26,12 +27,12 @@ export const BUILTIN_SOURCES: SourceConfig[] = [
   },
   {
     id: 'tvmaze', name: 'TVmaze', type: 'tvmaze', builtin: true, enabled: true,
-    categories: ['movies'], options: {},
-    description: 'TV series posters and backdrops. No account or key needed.',
+    categories: ['movies', 'animation'], options: {},
+    description: 'TV series posters and backdrops (animated series too). No account or key needed.',
   },
   {
     id: 'wallhaven', name: 'Wallhaven', type: 'wallhaven', builtin: true, enabled: true,
-    categories: ['movies', 'tech', 'nature', 'space', 'games', 'abstract', 'minimal', 'anime', 'linux'],
+    categories: ['movies', 'animation', 'tech', 'nature', 'space', 'games', 'abstract', 'minimal', 'anime', 'linux'],
     options: {},
     description: 'Huge community library; covers movies/series, tech, nature, games and more.',
   },

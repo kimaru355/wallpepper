@@ -10,6 +10,7 @@ import {
   placeCrop,
   setVariant,
   shapeOf,
+  thumbOf,
   type Crop,
   type Shape,
   type Wallpaper,
@@ -128,7 +129,7 @@ function CompatDialog({ w: initial, onClose }: { w: Wallpaper; onClose: () => vo
     <Sheet visible onClose={onClose} title="Compatibility">
       <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
         <View style={{ width: 70, aspectRatio: status.shape === 'portrait' ? 9 / 16 : 16 / 9, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.panel2 }}>
-          <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} />
+          <CachedImage uri={thumbOf(w)} style={StyleSheet.absoluteFill as ImageStyle} />
         </View>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={text.h2}>
@@ -223,7 +224,7 @@ function CropEditor({ w, target, initial, onCancel, onSave }: { w: Wallpaper; ta
         <Text style={[text.h2, { padding: 14, paddingBottom: 6 }]}>Crop for {WHERE[target]}</Text>
         <Text style={[text.small, { paddingHorizontal: 14 }]}>Drag the frame over the part you want. The frame has the shape of a {SHAPE_LABEL[target]} screen.</Text>
         <View style={{ flex: 1, margin: 14 }} onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...pan.panHandlers}>
-          <CachedImage uri={w.thumb} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
+          <CachedImage uri={thumbOf(w)} style={StyleSheet.absoluteFill as ImageStyle} resizeMode="contain" />
           {dw > 0 && (
             <>
               {/* dim everything outside the frame */}

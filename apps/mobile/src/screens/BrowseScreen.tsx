@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FlatList, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { ScrollView } from 'react-native';
-import { CATEGORIES, getSources, sourceSupports, type Sort, type Wallpaper } from '@wallpepper/core';
+import { CATEGORIES, getSources, sourceSupports, type Orientation, type Sort, type Wallpaper } from '@wallpepper/core';
 import { GroupSheet, PreviewModal, Tile } from '../components';
 import { getCtx, useAppState, useBrowse } from '../ctx';
 import { Btn, Chip, colors, Select, text } from '../ui';
@@ -46,7 +46,15 @@ export function BrowseScreen() {
           />
           <Btn title="Search" icon="search" kind="primary" onPress={() => void browse.setFilters({ query })} />
         </View>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Select
+              label="Orientation"
+              value={b.orientation}
+              options={[{ value: 'any', label: 'All' }, { value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]}
+              onChange={(v) => browse.setOrientation(v as Orientation)}
+            />
+          </View>
           <View style={{ flex: 1 }}>
             <Select label="Sort" value={b.filters.sort} options={[{ value: 'latest', label: 'Latest' }, { value: 'popular', label: 'Popular' }, { value: 'random', label: 'Random' }]} onChange={(v) => void browse.setFilters({ sort: v as Sort })} />
           </View>

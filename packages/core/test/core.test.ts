@@ -310,3 +310,66 @@ test('signed-in installs move to the new backend domain', async () => {
   assert.equal(b.state.local.auth!.serverUrl, 'https://wallpepper-backend.pcstack.top');
   assert.equal(b.state.local.auth!.token, 't');
 });
+
+test('settings changes re-apply what is on screen (same or different per display)', async () => {
+  const { rotateNow, reapplyCurrent, applyWallpaper } = await import('../src/index.ts');
+  const s = await mk('pc', 'linux');
+  for (let i = 1; i <= 4; i++) addToGroup(s, { ...wp(i), width: 1920, height: 1080 }, 'all');
+  const many: { ids: string[]; fit: string }[] = [];
+  const single: { id: string; fit: string }[] = [];
+  const platform: PlatformActions = {
+    folderLayout: 'tree',
+    download: async () => '',
+    setWallpaper: async (w, _t, fit) => void single.push({ id: w.id, fit }),
+    displays: async () => 2,
+    setWallpapers: async (items) => void many.push({ ids: items.map((i) => i.w.id), fit: items[0].fit }),
+  };
+  assert.equal(await reapplyCurrent(s, platform), false, 'nothing set yet');
+  await rotateNow(s, platform);
+  const shown = many[0].ids;
+  updateDeviceSettings(s, s.state.local.deviceId, { fit: 'fit' });
+  assert.ok(await reapplyCurrent(s, platform));
+  assert.deepEqual(many[1], { ids: shown, fit: 'fit' }, 'same pictures, new fit');
+  // "same on every display": the first one goes everywhere
+  updateDeviceSettings(s, s.state.local.deviceId, { perDisplay: false });
+  await reapplyCurrent(s, platform);
+  assert.equal(single.at(-1)!.id, shown[0]);
+  // "Set wallpaper" puts one picture on every display even when displays differ
+  updateDeviceSettings(s, s.state.local.deviceId, { perDisplay: true });
+  await applyWallpaper(s, platform, { ...wp(3), width: 1920, height: 1080 });
+  assert.equal(single.at(-1)!.id, wp(3).id);
+  // back to "different": only one picture known, so new ones are picked for both displays
+  await reapplyCurrent(s, platform);
+  assert.equal(many.at(-1)!.ids.length, 2);
+});
+
+test('grid cards: portrait pictures fill phone cards, landscape ones are blurred-fitted; library shows the device version', async () => {
+  const { cardView, thumbOf, needsCompat, setVariant } = await import('../src/index.ts');
+  const s = await mk('pc', 'linux');
+  const tall = { ...wp(1), width: 1000, height: 1500, thumb: 'https://th.wallhaven.cc/lg/ab/abc123.jpg' };
+  const wide = { ...wp(2), width: 1920, height: 1080 };
+  assert.equal(thumbOf(tall), 'https://th.wallhaven.cc/orig/ab/abc123.jpg', 'uncropped Wallhaven thumb');
+  assert.equal(cardView(tall, 'portrait').mode, 'cover');
+  assert.equal(cardView(tall, 'landscape').mode, 'blur');
+  assert.equal(cardView(wide, 'landscape').mode, 'cover');
+  assert.equal(cardView(wide, 'portrait').mode, 'blur');
+  addToGroup(s, tall, 'all');
+  addToGroup(s, wide, 'all');
+  assert.equal(needsCompat(s.state, getLibrary(s.state)).length, 2);
+  const alt = { ...wp(3), width: 1920, height: 1080, thumb: 'https://x/alt.jpg' };
+  setVariant(s, tall, { kind: 'image', wallpaper: alt });
+  setVariant(s, wide, { kind: 'crop', crop: { x: 0.3, y: 0, w: 0.25, h: 1 } });
+  assert.equal(needsCompat(s.state, getLibrary(s.state)).length, 0);
+  const t = cardView(tall, 'landscape', s.state);
+  assert.deepEqual([t.thumb, t.mode], ['https://x/alt.jpg', 'cover'], 'the other picture');
+  const c = cardView(wide, 'portrait', s.state);
+  assert.ok(c.crop && Math.abs(c.aspect! - (0.25 * 1920) / 1080) < 1e-9, 'the crop');
+});
+
+test('animation category: Wallhaven and TVmaze serve it', async () => {
+  const { CATEGORIES, sourceSupports } = await import('../src/index.ts');
+  assert.ok(CATEGORIES.find((c) => c.id === 'animation')?.main);
+  const s = await mk('pc', 'linux');
+  const ids = getSources(s.state).filter((x) => sourceSupports(x, 'animation')).map((x) => x.id);
+  assert.deepEqual(ids.sort(), ['tvmaze', 'wallhaven']);
+});

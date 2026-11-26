@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildCollection,
   CATEGORIES,
+  cardView,
   cacheGet,
   cachedFetch,
   getGroupPath,
@@ -20,7 +21,7 @@ import {
   type Recommended,
   type Wallpaper,
 } from '@wallpepper/core';
-import { CachedImg, GroupDialog, GroupSelect, Icon, IconButton, Modal, Preview, WallpaperCard } from '../components';
+import { CachedImg, CardImage, GroupDialog, GroupSelect, Icon, IconButton, Modal, Preview, WallpaperCard } from '../components';
 import { getCtx, makeBrowse } from '../ctx';
 import { useAppState, useBrowseOf } from '../hooks';
 import { toast } from '../toast';
@@ -331,7 +332,7 @@ function CommunityDetailDialog({ id, onClose, onChanged }: { id: string; onClose
           {c.subgroupNames.length > 0 && <div className="chips" style={{ margin: '8px 0' }}>{c.subgroupNames.map((n) => <span key={n} className="chip"><Icon name="folder" size={13} /> {n}</span>)}</div>}
           <div className="grid small">
             {c.payload.wallpapers.slice(0, 24).map((w) => (
-              <div className="card" key={w.id}><CachedImg url={w.thumb} onClick={() => setPreview(w)} /></div>
+              <div className="card" key={w.id}><CardImage view={cardView(w, 'landscape')} onClick={() => setPreview(w)} /></div>
             ))}
           </div>
           <div className="row between wrap" style={{ marginTop: 14 }}>
